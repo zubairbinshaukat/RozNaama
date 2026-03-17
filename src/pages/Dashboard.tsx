@@ -1,0 +1,187 @@
+import { useState, useEffect } from 'react'
+import { Sun, CalendarDays, CalendarRange, TrendingUp, Download } from 'lucide-react'
+import { UserButton } from '@clerk/clerk-react'
+import { Link } from 'react-router-dom'
+import { motion, AnimatePresence } from 'framer-motion'
+import { cn } from '@/lib/utils'
+import ThemeSwitcher   from '@/components/shared/ThemeSwitcher'
+import SummaryCards    from '@/components/dashboard/SummaryCards'
+import DailyTab        from '@/components/dashboard/DailyTab'
+import WeeklyChart     from '@/components/dashboard/WeeklyChart'
+import MonthlyChart    from '@/components/dashboard/MonthlyChart'
+import FAB             from '@/components/shared/FAB'
+import AddCategoryModal      from '@/components/modals/AddCategoryModal'
+import AddSaleModal          from '@/components/modals/AddSaleModal'
+import ManageCategoriesModal from '@/components/modals/ManageCategoriesModal'
+import { useDashboardStats } from '@/hooks/useSales'
+
+type Tab = 'daily' | 'weekly' | 'monthly'
+
+const TABS: { id: Tab; label: string; icon: React.ReactNode }[] = [
+  { id: 'daily',   label: 'Daily',   icon: <Sun          size={14} /> },
+  { id: 'weekly',  label: 'Weekly',  icon: <CalendarDays  size={14} /> },
+  { id: 'monthly', label: 'Monthly', icon: <CalendarRange size={14} /> },
+]
+
+// ── PWA install hook ────────────────────────────────────────────────────────
+
+type BeforeInstallPromptEvent = Event & {
+  prompt: () => Promise<void>
+  userChoice: Promise<{ outcome: 'accepted' | 'dismissed' }>
+}
+
+function usePWAInstall() {
+  const [promptEvent, setPromptEvent] = useState<BeforeInstallPromptEvent | null>(null)
+  const [isInstalled, setIsInstalled] = useState(false)
+
+  useEffect(() => {
+    const handler = (e: Event) => {
+      e.preventDefault()
+      setPromptEvent(e as BeforeInstallPromptEvent)
+    }
+    window.addEventListener('beforeinstallprompt', handler)
+
+    const mediaQuery = window.matchMedia('(display-mode: standalone)')
+    if (mediaQuery.matches) setIsInstalled(true)
+    const onDisplay = (e: MediaQueryListEvent) => { if (e.matches) setIsInstalled(true) }
+    mediaQuery.addEventListener('change', onDisplay)
+
+    return () => {
+      window.removeEventListener('beforeinstallprompt', handler)
+      mediaQuery.removeEventListener('change', onDisplay)
+    }
+  }, [])
+
+  const install = async () => {
+    if (!promptEvent) return
+    await promptEvent.prompt()
+    const result = await promptEvent.userChoice
+    if (result.outcome === 'accepted') {
+      setPromptEvent(null)
+      setIsInstalled(true)
+    }
+  }
+
+  return { canInstall: !!promptEvent && !isInstalled, install }
+}
+
+// ── Dashboard ────────────────────────────────────────────────────────────────
+
+export default function Dashboard() {
+  const [activeTab,              setActiveTab]              = useState<Tab>('daily')
+  const [showCategoryModal,      setShowCategoryModal]      = useState(false)
+  const [showSaleModal,          setShowSaleModal]          = useState(false)
+  const [showManageCategoriesModal, setShowManageCategoriesModal] = useState(false)
+
+  const stats = useDashboardStats()
+  const { canInstall, install } = usePWAInstall()
+
+  return (
+    <div className="min-h-dvh bg-background">
+      {/* ── Top bar ──────────────────────────────────────────────────────── */}
+      <header className="sticky top-0 z-40 bg-background/90 backdrop-blur-xl border-b border-border/50">
+        <div className="mx-auto px-4 sm:px-6 h-14 flex items-center justify-between gap-4 max-w-3xl">
+          {/* Logo */}
+          <Link to="/" className="flex items-center gap-2 shrink-0">
+            <div className="w-7 h-7 rounded-[8px] bg-gradient-brand flex items-center justify-center shadow-glow-sm">
+              <TrendingUp className="text-white" size={13} strokeWidth={2.5} />
+            </div>
+            <span className="font-logo text-[1.05rem] text-foreground hidden sm:block">RozNaama</span>
+          </Link> 
+
+          {/* Right side */}
+          <div className="flex items-center gap-2 ml-auto">
+            {/* PWA Install button */}
+            <AnimatePresence>
+              {canInstall && (
+                <motion.button
+                  initial={{ opacity: 0, scale: 0.9 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  exit={{ opacity: 0, scale: 0.9 }}
+                  transition={{ duration: 0.25, ease: [0.22, 1, 0.36, 1] }}
+                  onClick={install}
+                  aria-label="Install app"
+                  title="Install App"
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold bg-primary/10 text-primary hover:bg-primary/20 active:scale-95 transition-all"
+                >
+                  <Download size={13} />
+                  <span className="hidden sm:inline">Install</span>
+                </motion.button>
+              )}
+            </AnimatePresence>
+            <ThemeSwitcher />
+            <UserButton
+              afterSignOutUrl="/"
+              appearance={{ elements: { avatarBox: 'w-8 h-8' } }}
+            />
+          </div>
+        </div>
+      </header>
+
+      {/* ── Main content ─────────────────────────────────────────────────── */}
+      <main className="mx-auto px-4 sm:px-6 py-6 pb-28 max-w-3xl">
+
+        {/* Summary cards — tab aware */}
+        <section aria-label="Summary" className="mb-6">
+          <SummaryCards stats={stats} activeTab={activeTab} />
+        </section>
+
+        {/* Tab bar */}
+        <div className="flex gap-1 p-1 rounded-xl bg-muted/50 border border-border/60 mb-6">
+          {TABS.map((tab) => (
+            <button
+              key={tab.id}
+              onClick={() => setActiveTab(tab.id)}
+              aria-selected={activeTab === tab.id}
+              role="tab"
+              className={cn(
+                'flex-1 flex items-center justify-center gap-1.5 py-2 px-3 rounded-lg',
+                'text-[0.8rem] font-semibold transition-all duration-200 active:scale-95',
+                activeTab === tab.id
+                  ? 'bg-background text-foreground shadow-sm'
+                  : 'text-muted-foreground hover:text-foreground',
+              )}
+            >
+              {tab.icon}
+              <span>{tab.label}</span>
+            </button>
+          ))}
+        </div>
+
+        {/* Tab panels */}
+        <AnimatePresence mode="wait">
+          <motion.section
+            key={activeTab}
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -6 }}
+            transition={{ duration: 0.25, ease: [0.22, 1, 0.36, 1] }}
+            aria-label={`${activeTab} view`}
+          >
+            {activeTab === 'daily'   && <DailyTab />}
+            {activeTab === 'weekly'  && <WeeklyChart />}
+            {activeTab === 'monthly' && <MonthlyChart />}
+          </motion.section>
+        </AnimatePresence>
+      </main>
+
+      {/* ── FAB ──────────────────────────────────────────────────────────── */}
+      <FAB
+        onAddCategory={() => setShowCategoryModal(true)}
+        onAddSale={()     => setShowSaleModal(true)}
+        onManageCategories={() => setShowManageCategoriesModal(true)}
+      />
+
+      {/* ── Modals ───────────────────────────────────────────────────────── */}
+      {showCategoryModal && (
+        <AddCategoryModal onClose={() => setShowCategoryModal(false)} />
+      )}
+      {showSaleModal && (
+        <AddSaleModal onClose={() => setShowSaleModal(false)} />
+      )}
+      {showManageCategoriesModal && (
+        <ManageCategoriesModal onClose={() => setShowManageCategoriesModal(false)} />
+      )}
+    </div>
+  )
+}
