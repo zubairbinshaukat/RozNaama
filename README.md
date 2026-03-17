@@ -11,7 +11,7 @@
 
 ---
 
-![RozNaama screenshot](./docs/screenshot.png)
+![RozNaama screenshot](public/screenshot/Landing.png)
 
 *Add a screenshot of the dashboard or landing page to `docs/screenshot.png`.*
 
