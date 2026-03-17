@@ -11,9 +11,19 @@
 
 ---
 
-![RozNaama screenshot](public/screenshot/Landing.png)
+## Landing page
 
-*Add a screenshot of the dashboard or landing page to `docs/screenshot.png`.*
+<p align="center">
+  <img src="public/screenshots/Landing.png" alt="RozNaama landing page" width="100%" />
+</p>
+
+---
+
+## Dashboard
+
+<p align="center">
+  <img src="public/screenshots/Dashboard.png" alt="RozNaama dashboard — sales, summary cards, and daily view" width="100%" />
+</p>
 
 ---
 
@@ -54,8 +64,8 @@ The app works offline-friendly where possible and syncs with Convex when online.
 1. **Clone and install**
 
    ```bash
-   git clone https://github.com/ZubairBinShaukat/roznaama.git
-   cd roznaama
+   git clone https://github.com/ZubairBinShaukat/RozNaama.git
+   cd RozNaama
    npm install
    ```
 

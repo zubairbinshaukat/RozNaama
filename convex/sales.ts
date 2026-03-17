@@ -1,7 +1,7 @@
 import { ConvexError, v } from 'convex/values'
-import { mutation, query } from './_generated/server'
+import { mutation, query, type MutationCtx, type QueryCtx } from './_generated/server'
 
-async function requireUser(ctx: Parameters<typeof query>[0]['ctx'] & Parameters<typeof mutation>[0]['ctx']) {
+async function requireUser(ctx: QueryCtx | MutationCtx) {
   const identity = await ctx.auth.getUserIdentity()
   if (!identity) throw new ConvexError('Unauthorized')
 
