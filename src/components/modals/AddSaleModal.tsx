@@ -47,9 +47,25 @@ export default function AddSaleModal({ onClose }: AddSaleModalProps) {
   const categories  = useCategories()
   const { showToast } = useToast()
   const firstInputRef = useRef<HTMLInputElement>(null)
+  const scrollContainerRef = useRef<HTMLDivElement>(null)
 
   // Focus first input on open
   useEffect(() => { firstInputRef.current?.focus() }, [])
+
+  // On iOS, focusing an input inside a fixed modal doesn't always auto-scroll.
+  // Force-scroll the focused element into view within the modal's scroll area.
+  useEffect(() => {
+    const handler = (e: FocusEvent) => {
+      const target = e.target as HTMLElement | null
+      const scroller = scrollContainerRef.current
+      if (!target || !scroller) return
+      if (scroller.contains(target)) {
+        target.scrollIntoView({ block: 'nearest', inline: 'nearest' })
+      }
+    }
+    document.addEventListener('focusin', handler)
+    return () => document.removeEventListener('focusin', handler)
+  }, [])
 
   // Escape to close (only when not saving)
   useEffect(() => {
@@ -140,6 +156,11 @@ export default function AddSaleModal({ onClose }: AddSaleModalProps) {
       role="dialog"
       aria-modal="true"
       aria-labelledby="add-sale-title"
+      style={{
+        // Keep bottom sheet above the home indicator on iOS.
+        paddingBottom: 'calc(1rem + env(safe-area-inset-bottom))',
+        paddingTop: 'calc(1rem + env(safe-area-inset-top))',
+      }}
     >
       {/* Backdrop */}
       <div
@@ -149,7 +170,8 @@ export default function AddSaleModal({ onClose }: AddSaleModalProps) {
       />
 
       {/* Modal */}
-      <div className="relative w-full max-w-lg bg-card border border-border rounded-2xl shadow-2xl animate-modal-content max-h-[92dvh] flex flex-col">
+      <div className="relative w-full max-w-lg p-px rounded-t-3xl sm:rounded-2xl bg-gradient-brand/25">
+        <div className="relative h-full bg-card/85 backdrop-blur-xl border border-border/70 rounded-[1.25rem] shadow-2xl animate-modal-content max-h-[92dvh] flex flex-col overflow-hidden">
         {/* Header */}
         <div className="flex items-center justify-between px-5 pt-5 pb-4 border-b border-border shrink-0">
           <h2 id="add-sale-title" className="text-base font-semibold text-foreground">
@@ -167,7 +189,7 @@ export default function AddSaleModal({ onClose }: AddSaleModalProps) {
 
         <form onSubmit={handleSubmit} className="flex flex-col flex-1 min-h-0">
           {/* Scrollable rows */}
-          <div className="overflow-y-auto px-5 py-4 flex flex-col gap-3 flex-1">
+          <div ref={scrollContainerRef} className="overflow-y-auto px-5 py-4 flex flex-col gap-3 flex-1 overscroll-contain">
             {/* Top-level error */}
             {topError && (
               <div className="flex items-center gap-2 text-sm text-destructive bg-destructive/10 border border-destructive/30 rounded-lg px-3 py-2.5" role="alert">
@@ -209,7 +231,7 @@ export default function AddSaleModal({ onClose }: AddSaleModalProps) {
           </div>
 
           {/* Footer */}
-          <div className="px-5 pb-5 pt-4 border-t border-border shrink-0 flex items-center justify-between gap-4">
+          <div className="px-5 pb-[calc(1.25rem+env(safe-area-inset-bottom))] pt-4 border-t border-border/80 shrink-0 flex items-center justify-between gap-4">
             <div className="text-sm font-semibold text-foreground">
               Total:{' '}
               <span className="text-primary text-base">
@@ -239,6 +261,7 @@ export default function AddSaleModal({ onClose }: AddSaleModalProps) {
             </div>
           </div>
         </form>
+        </div>
       </div>
     </div>
   )
@@ -261,7 +284,7 @@ function SaleRowInput({
   row, errors, categories, isFirst, canRemove, firstInputRef, onChange, onRemove,
 }: SaleRowInputProps) {
   return (
-    <div className="flex flex-col gap-2 p-3 rounded-xl border border-border bg-muted/20">
+    <div className="flex flex-col gap-2 p-3 rounded-xl border border-border/60 bg-background/50 backdrop-blur-xl">
       {/* Row header */}
       <div className="flex items-center justify-between">
         <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
@@ -280,7 +303,7 @@ function SaleRowInput({
       </div>
 
       {/* Product name + Amount */}
-      <div className="grid grid-cols-[1fr_auto] gap-2">
+      <div className="grid grid-cols-1 sm:grid-cols-[1fr_auto] gap-2">
         <div className="flex flex-col gap-1">
           <input
             ref={firstInputRef as React.RefObject<HTMLInputElement> | undefined}
@@ -304,7 +327,7 @@ function SaleRowInput({
           )}
         </div>
 
-        <div className="flex flex-col gap-1 w-28">
+        <div className="flex flex-col gap-1 w-full sm:w-28">
           <input
             type="number"
             value={row.amount}
@@ -331,7 +354,7 @@ function SaleRowInput({
       </div>
 
       {/* Category + Note */}
-      <div className="grid grid-cols-2 gap-2">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
         <select
           value={row.categoryId}
           onChange={(e) => onChange(row.id, 'categoryId', e.target.value)}
@@ -356,7 +379,7 @@ function SaleRowInput({
           maxLength={100}
           aria-label="Note (optional)"
           className={cn(
-            'h-9 px-3 rounded-lg border bg-background text-sm text-foreground',
+            'h-10 px-3 rounded-lg border bg-background text-sm text-foreground',
             'placeholder:text-muted-foreground',
             'focus:outline-none focus:ring-2 focus:ring-ring focus:border-transparent transition-shadow',
           )}

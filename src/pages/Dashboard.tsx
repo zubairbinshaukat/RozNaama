@@ -13,6 +13,7 @@ import FAB             from '@/components/shared/FAB'
 import AddCategoryModal      from '@/components/modals/AddCategoryModal'
 import AddSaleModal          from '@/components/modals/AddSaleModal'
 import ManageCategoriesModal from '@/components/modals/ManageCategoriesModal'
+import IOSInstallModal      from '@/components/modals/IOSInstallModal'
 import { useDashboardStats } from '@/hooks/useSales'
 
 type Tab = 'daily' | 'weekly' | 'monthly'
@@ -30,19 +31,27 @@ type BeforeInstallPromptEvent = Event & {
   userChoice: Promise<{ outcome: 'accepted' | 'dismissed' }>
 }
 
-function usePWAInstall() {
+function usePWAInstall({ onIOSInstall }: { onIOSInstall: () => void }) {
   const [promptEvent, setPromptEvent] = useState<BeforeInstallPromptEvent | null>(null)
-  const [isInstalled, setIsInstalled] = useState(false)
+  const [isInstalled, setIsInstalled] = useState(() => {
+    if (typeof window === 'undefined') return false
+    const mediaQuery = window.matchMedia('(display-mode: standalone)')
+    const standaloneNavigator = (window.navigator as { standalone?: boolean }).standalone === true
+    return mediaQuery.matches || standaloneNavigator
+  })
+  const [isIOS] = useState(() => {
+    if (typeof navigator === 'undefined') return false
+    return /iPad|iPhone|iPod/.test(navigator.userAgent)
+  })
 
   useEffect(() => {
+    const mediaQuery = window.matchMedia('(display-mode: standalone)')
     const handler = (e: Event) => {
       e.preventDefault()
       setPromptEvent(e as BeforeInstallPromptEvent)
     }
     window.addEventListener('beforeinstallprompt', handler)
 
-    const mediaQuery = window.matchMedia('(display-mode: standalone)')
-    if (mediaQuery.matches) setIsInstalled(true)
     const onDisplay = (e: MediaQueryListEvent) => { if (e.matches) setIsInstalled(true) }
     mediaQuery.addEventListener('change', onDisplay)
 
@@ -53,6 +62,10 @@ function usePWAInstall() {
   }, [])
 
   const install = async () => {
+    if (isIOS) {
+      onIOSInstall()
+      return
+    }
     if (!promptEvent) return
     await promptEvent.prompt()
     const result = await promptEvent.userChoice
@@ -62,7 +75,7 @@ function usePWAInstall() {
     }
   }
 
-  return { canInstall: !!promptEvent && !isInstalled, install }
+  return { canInstall: !isInstalled && (isIOS || !!promptEvent), install, isIOS }
 }
 
 // ── Dashboard ────────────────────────────────────────────────────────────────
@@ -72,9 +85,12 @@ export default function Dashboard() {
   const [showCategoryModal,      setShowCategoryModal]      = useState(false)
   const [showSaleModal,          setShowSaleModal]          = useState(false)
   const [showManageCategoriesModal, setShowManageCategoriesModal] = useState(false)
+  const [showIOSInstallModal,   setShowIOSInstallModal]   = useState(false)
 
   const stats = useDashboardStats()
-  const { canInstall, install } = usePWAInstall()
+  const { canInstall, install, isIOS } = usePWAInstall({
+    onIOSInstall: () => setShowIOSInstallModal(true),
+  })
 
   return (
     <div className="min-h-dvh bg-background">
@@ -100,12 +116,13 @@ export default function Dashboard() {
                   exit={{ opacity: 0, scale: 0.9 }}
                   transition={{ duration: 0.25, ease: [0.22, 1, 0.36, 1] }}
                   onClick={install}
-                  aria-label="Install app"
-                  title="Install App"
+                  aria-label={isIOS ? 'Add to Home Screen' : 'Install app'}
+                  title={isIOS ? 'Add to Home Screen' : 'Install App'}
                   className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold bg-primary/10 text-primary hover:bg-primary/20 active:scale-95 transition-all"
                 >
                   <Download size={13} />
-                  <span className="hidden sm:inline">Install</span>
+                  <span className="inline sm:hidden">{isIOS ? 'Add' : 'Install'}</span>
+                  <span className="hidden sm:inline">{isIOS ? 'Add to Home Screen' : 'Install'}</span>
                 </motion.button>
               )}
             </AnimatePresence>
@@ -181,6 +198,9 @@ export default function Dashboard() {
       )}
       {showManageCategoriesModal && (
         <ManageCategoriesModal onClose={() => setShowManageCategoriesModal(false)} />
+      )}
+      {showIOSInstallModal && (
+        <IOSInstallModal onClose={() => setShowIOSInstallModal(false)} />
       )}
     </div>
   )
