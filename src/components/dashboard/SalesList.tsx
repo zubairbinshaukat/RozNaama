@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react'
-import { ChevronDown, ChevronUp, ShoppingBag, Calendar, Pencil, Trash2, Eye } from 'lucide-react'
+import { ChevronDown, ShoppingBag, Calendar, Pencil, Trash2, Eye } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { cn, formatCurrency, formatDate } from '@/lib/utils'
 import { useDeleteSaleItem } from '@/hooks/useSales'
@@ -11,19 +11,32 @@ import ConfirmModal  from '@/components/modals/ConfirmModal'
 import type { SaleSession, SaleItem } from '@/hooks/useSales'
 import type { Category } from '@/hooks/useCategories'
 
-/** Today's date in YYYY-MM-DD for default-open accordion */
+/* ─── helpers ─── */
+
 function getTodayKey(): string {
   return new Date().toISOString().split('T')[0]
 }
 
-/** Convert hex to soft rgba background */
-function hexToSoftBg(hex: string, alpha = 0.12): string {
+function hexToRgb(hex: string): { r: number; g: number; b: number } {
   const clean = hex.replace('#', '')
-  const r = parseInt(clean.slice(0, 2), 16)
-  const g = parseInt(clean.slice(2, 4), 16)
-  const b = parseInt(clean.slice(4, 6), 16)
+  return {
+    r: parseInt(clean.slice(0, 2), 16),
+    g: parseInt(clean.slice(2, 4), 16),
+    b: parseInt(clean.slice(4, 6), 16),
+  }
+}
+
+function hexToSoftBg(hex: string, alpha = 0.10): string {
+  const { r, g, b } = hexToRgb(hex)
   return `rgba(${r},${g},${b},${alpha})`
 }
+
+function hexToGradient(hex: string): string {
+  const { r, g, b } = hexToRgb(hex)
+  return `linear-gradient(135deg, rgba(${r},${g},${b},0.08) 0%, rgba(${r},${g},${b},0.02) 100%)`
+}
+
+/* ─── types ─── */
 
 type DayGroup = {
   dateKey:     string
@@ -63,28 +76,53 @@ function buildDayGroups(sessions: SaleSession[]): DayGroup[] {
   return Array.from(map.values()).sort((a, b) => b.dateKey.localeCompare(a.dateKey))
 }
 
+/* ─── empty state ─── */
+
 function EmptyState() {
   return (
     <motion.div
-      initial={{ opacity: 0, y: 12 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.4, ease: 'easeOut' }}
-      className="flex flex-col items-center justify-center py-20 gap-4 text-center"
+      initial={{ opacity: 0, y: 20, scale: 0.95 }}
+      animate={{ opacity: 1, y: 0, scale: 1 }}
+      transition={{ duration: 0.5, ease: [0.23, 1, 0.32, 1] }}
+      className="flex flex-col items-center justify-center py-24 gap-5 text-center"
     >
-      <div className="w-16 h-16 rounded-2xl bg-muted/60 flex items-center justify-center">
-        <ShoppingBag className="text-muted-foreground/50" size={28} strokeWidth={1.5} />
-      </div>
-      <div>
-        <p className="font-semibold text-foreground">No sales this month</p>
-        <p className="text-sm text-muted-foreground mt-1">Tap the + button to record your first sale!</p>
+      <motion.div
+        animate={{ y: [0, -6, 0] }}
+        transition={{ repeat: Infinity, duration: 3, ease: 'easeInOut' }}
+        className="w-20 h-20 rounded-3xl bg-linear-to-br from-primary/15 via-primary/5 to-transparent flex items-center justify-center backdrop-blur-sm border border-primary/10"
+      >
+        <ShoppingBag className="text-primary/40" size={32} strokeWidth={1.5} />
+      </motion.div>
+      <div className="space-y-2">
+        <p className="font-semibold text-foreground text-lg tracking-tight">No sales yet</p>
+        <p className="text-sm text-muted-foreground leading-relaxed max-w-[240px]">
+          Tap the <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-primary text-primary-foreground text-xs font-bold align-middle">+</span> button to record your first sale
+        </p>
       </div>
     </motion.div>
   )
 }
 
+/* ─── sale item card (redesigned) ─── */
+
+const cardVariants = {
+  hidden: { opacity: 0, y: 12, scale: 0.97 },
+  visible: (i: number) => ({
+    opacity: 1,
+    y: 0,
+    scale: 1,
+    transition: {
+      delay: i * 0.04,
+      duration: 0.35,
+      ease: [0.23, 1, 0.32, 1] as [number, number, number, number],
+    },
+  }),
+} satisfies import('framer-motion').Variants
+
 function SaleItemCard({
   item,
   categories,
+  index,
   onViewDetail,
   onCategoryOpen,
   onEdit,
@@ -92,83 +130,158 @@ function SaleItemCard({
 }: {
   item:             SaleItem
   categories:       Category[]
+  index:            number
   onViewDetail:     (item: SaleItem) => void
   onCategoryOpen:   (category: Category) => void
   onEdit:           (item: SaleItem) => void
   onDelete:         (item: SaleItem) => void
 }) {
-  const cat = categories.find((c) => c._id === item.categoryId)
-  const color = cat?.color
+  const cat   = categories.find((c) => c._id === item.categoryId)
+  const color = cat?.color ?? '#888888'
+  const { r, g, b } = hexToRgb(color)
 
   return (
-    <div className="h-full min-h-0">
+    <motion.div
+      custom={index}
+      variants={cardVariants}
+      initial="hidden"
+      animate="visible"
+      layout
+      className="h-full min-h-0 group"
+    >
       <div
-        className={cn(
-          'rounded-2xl border-2 bg-card p-4 flex flex-col min-h-[160px] h-full',
-          'shadow-card-hover transition-all duration-200 hover:-translate-y-0.5',
-          !color && 'border-border',
-        )}
-        style={color ? { borderColor: color } : undefined}
+        className="relative rounded-2xl h-full flex flex-col overflow-hidden transition-all duration-300"
+        style={{
+          background: hexToGradient(color),
+          boxShadow: `
+            0 2px 4px rgba(0,0,0,0.04),
+            0 8px 16px rgba(0,0,0,0.06),
+            0 16px 40px rgba(${r},${g},${b},0.14),
+            0 0 0 1px rgba(${r},${g},${b},0.10)
+          `,
+        }}
+        // onMouseEnter={(e) => {
+        //   e.currentTarget.style.boxShadow = `
+        //     0 2px 4px rgba(0,0,0,0.04),
+        //     0 8px 16px rgba(0,0,0,0.06),
+        //     0 16px 40px rgba(${r},${g},${b},0.14),
+        //     0 0 0 1px rgba(${r},${g},${b},0.10)
+        //   `
+        // }}
+        // onMouseLeave={(e) => {
+        //   e.currentTarget.style.boxShadow = `
+        //     0 1px 2px rgba(0,0,0,0.04),
+        //     0 4px 8px rgba(0,0,0,0.04),
+        //     0 8px 24px rgba(${r},${g},${b},0.08),
+        //     0 0 0 1px rgba(${r},${g},${b},0.06)
+        //   `
+        // }}
       >
-        <div className="flex flex-col gap-2 flex-1 min-h-0 min-w-0">
-          <div className="flex items-start justify-between gap-2">
-            <p className="text-sm font-semibold text-foreground leading-snug line-clamp-2 wrap-break-word min-w-0">
-              {item.productName}
-            </p>
-            <span className="text-sm font-logo font-bold text-foreground tabular-nums tracking-tight shrink-0">
+        {/* Top accent line */}
+        <div
+          className="h-[3px] w-full shrink-0"
+          style={{
+            background: `linear-gradient(90deg, ${color}, rgba(${r},${g},${b},0.2))`,
+          }}
+        />
+
+        {/* Card body */}
+        <div className="flex flex-col flex-1 p-4 min-h-0">
+          {/* Header: category pill + amount */}
+          <div className="flex items-start justify-between gap-2 mb-3">
+            {cat ? (
+              <button
+                type="button"
+                onClick={() => onCategoryOpen(cat)}
+                className="text-[11px] font-semibold px-2.5 py-1 rounded-full max-w-[60%] truncate text-left transition-all duration-200 hover:scale-[1.03] active:scale-[0.97]"
+                style={{
+                  backgroundColor: hexToSoftBg(cat.color, 0.14),
+                  color: cat.color,
+                }}
+              >
+                {cat.name}
+              </button>
+            ) : (
+              <span className="text-[11px] font-medium px-2.5 py-1 rounded-full bg-muted/40 text-muted-foreground">
+                Uncategorized
+              </span>
+            )}
+            <div
+              className="text-base font-bold tabular-nums tracking-tight shrink-0"
+              style={{ color }}
+            >
               {formatCurrency(item.amount)}
-            </span>
+            </div>
           </div>
+
+          {/* Product name */}
+          <p className="text-[15px] truncate font-semibold text-foreground leading-snug line-clamp-2 wrap-break min-w-0 mb-1">
+            {item.productName}
+          </p>
+
+          {/* Note */}
           {item.note && (
-            <p className="text-xs text-muted-foreground line-clamp-2">{item.note}</p>
+            <p className="text-xs text-muted-foreground/80 truncate line-clamp-2 leading-relaxed mt-1">
+              {item.note}
+            </p>
           )}
-          {cat ? (
+
+          {/* Spacer */}
+          <div className="flex-1 min-h-3" />
+
+          {/* Action buttons row */}
+          <div className="flex items-center gap-1 pt-3 border-t border-border/40 mt-auto">
             <button
               type="button"
-              onClick={() => onCategoryOpen(cat)}
-              className="text-[10px] font-medium px-2 py-0.5 rounded-md max-w-full truncate text-left w-fit active:scale-[0.98] transition-transform"
-              style={{ backgroundColor: hexToSoftBg(cat.color), color: cat.color }}
+              onClick={() => onViewDetail(item)}
+              aria-label="View sale details"
+              className={cn(
+                'flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl text-xs font-medium',
+                'text-muted-foreground/70 transition-all duration-200',
+                'hover:bg-foreground/[0.04] hover:text-foreground',
+                'active:scale-95 touch-manipulation',
+              )}
             >
-              {cat.name}
+              <Eye size={14} strokeWidth={2} />
+              <span className="hidden sm:inline">View</span>
             </button>
-          ) : (
-            <span className="text-[10px] font-medium px-2 py-0.5 rounded-md w-fit border border-border/70 bg-muted/25 text-muted-foreground">
-              Uncategorized
-            </span>
-          )}
-        </div>
-        <div className="grid grid-cols-3 gap-1 pt-3 mt-auto">
-          <button
-            type="button"
-            onClick={() => onViewDetail(item)}
-            aria-label="View sale details"
-            className="min-h-10 flex items-center justify-center rounded-xl text-muted-foreground hover:text-foreground hover:bg-muted/80 active:scale-95 transition-all touch-manipulation"
-          >
-            <Eye size={16} />
-          </button>
-          <button
-            type="button"
-            onClick={() => onEdit(item)}
-            aria-label="Edit sale"
-            className="min-h-10 flex items-center justify-center rounded-xl text-muted-foreground hover:text-foreground hover:bg-muted/80 active:scale-95 transition-all touch-manipulation"
-          >
-            <Pencil size={16} />
-          </button>
-          <button
-            type="button"
-            onClick={() => onDelete(item)}
-            aria-label="Delete sale"
-            className="min-h-10 flex items-center justify-center rounded-xl text-muted-foreground hover:text-destructive hover:bg-destructive/10 active:scale-95 transition-all touch-manipulation"
-          >
-            <Trash2 size={16} />
-          </button>
+            <button
+              type="button"
+              onClick={() => onEdit(item)}
+              aria-label="Edit sale"
+              className={cn(
+                'flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl text-xs font-medium',
+                'text-muted-foreground/70 transition-all duration-200',
+                'hover:bg-foreground/[0.04] hover:text-blue-400',
+                'active:scale-95 touch-manipulation',
+              )}
+            >
+              <Pencil size={13} strokeWidth={2} />
+              <span className="hidden sm:inline">Edit</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => onDelete(item)}
+              aria-label="Delete sale"
+              className={cn(
+                'flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl text-xs font-medium',
+                'text-muted-foreground/70 transition-all duration-200',
+                'hover:bg-destructive/[0.06] hover:text-destructive',
+                'active:scale-95 touch-manipulation',
+              )}
+            >
+              <Trash2 size={13} strokeWidth={2} />
+              <span className="hidden sm:inline">Delete</span>
+            </button>
+          </div>
         </div>
       </div>
-    </div>
+    </motion.div>
   )
 }
 
-/** Mobile: 2 columns; md+: 3; xl (main dashboard): 4. Single item stays full width. */
+/* ─── grid layout ─── */
+
 function SaleItemsGrid({
   items,
   categories,
@@ -191,17 +304,18 @@ function SaleItemsGrid({
 
   const gridClass =
     n === 1
-      ? 'grid-cols-1'
+      ? 'grid-cols-1 max-w-sm'
       : compact
         ? 'grid-cols-2 md:grid-cols-3'
         : 'grid-cols-2 md:grid-cols-3 xl:grid-cols-4'
 
   return (
     <div className={cn('grid gap-3', gridClass)}>
-      {items.map((item) => (
+      {items.map((item, i) => (
         <SaleItemCard
           key={item._id}
           item={item}
+          index={i}
           categories={categories}
           onViewDetail={onViewDetail}
           onCategoryOpen={onCategoryOpen}
@@ -212,6 +326,8 @@ function SaleItemsGrid({
     </div>
   )
 }
+
+/* ─── day card (accordion) ─── */
 
 function DayCard({
   group,
@@ -224,12 +340,12 @@ function DayCard({
   isOpenByDefault: boolean
   compact:         boolean
 }) {
-  const [expanded,     setExpanded]     = useState(isOpenByDefault)
+  const [expanded,      setExpanded]      = useState(isOpenByDefault)
   const [editingItem,   setEditingItem]   = useState<SaleItem | null>(null)
   const [detailItem,    setDetailItem]    = useState<SaleItem | null>(null)
   const [categoryModal, setCategoryModal] = useState<Category | null>(null)
-  const [deletingItem, setDeletingItem] = useState<SaleItem | null>(null)
-  const [deleting,     setDeleting]     = useState(false)
+  const [deletingItem,  setDeletingItem]  = useState<SaleItem | null>(null)
+  const [deleting,      setDeleting]      = useState(false)
 
   const deleteItem = useDeleteSaleItem()
   const { showToast } = useToast()
@@ -248,41 +364,77 @@ function DayCard({
     }
   }
 
+  const isToday = group.dateKey === getTodayKey()
+
   return (
     <>
-      <div className="rounded-2xl border border-border bg-card overflow-hidden shadow-sm transition-shadow hover:shadow-md">
+      <motion.div
+        initial={{ opacity: 0, y: 8 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.3, ease: [0.23, 1, 0.32, 1] }}
+        className={cn(
+          'rounded-2xl overflow-hidden transition-all duration-300',
+          'bg-card border border-border/60',
+          expanded ? 'shadow-md' : 'shadow-sm hover:shadow-md',
+        )}
+      >
+        {/* Accordion header */}
         <button
           onClick={() => setExpanded((p) => !p)}
-          className="w-full flex items-center gap-3 px-4 py-4 text-left hover:bg-muted/30 active:bg-muted/50 transition-colors"
+          className="w-full flex items-center gap-3.5 px-4 py-4 text-left transition-colors hover:bg-muted/20 active:bg-muted/40"
           aria-expanded={expanded}
         >
-          <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center shrink-0">
-            <Calendar size={17} className="text-primary" />
+          <div
+            className={cn(
+              'w-11 h-11 rounded-[14px] flex items-center justify-center shrink-0 transition-colors duration-300',
+              isToday
+                ? 'bg-primary/12 text-primary'
+                : 'bg-muted/60 text-muted-foreground',
+            )}
+          >
+            <Calendar size={18} strokeWidth={1.8} />
           </div>
+
           <div className="flex-1 min-w-0">
-            <p className="text-sm font-semibold text-foreground">{group.dateLabel}</p>
+            <div className="flex items-center gap-2">
+              <p className="text-sm font-semibold text-foreground tracking-tight">
+                {group.dateLabel}
+              </p>
+              {isToday && (
+                <span className="text-[10px] font-semibold uppercase tracking-wider text-primary bg-primary/10 px-2 py-0.5 rounded-full">
+                  Today
+                </span>
+              )}
+            </div>
             <p className="text-xs text-muted-foreground mt-0.5">
-              {group.itemCount} item{group.itemCount !== 1 ? 's' : ''}
+              {group.itemCount} sale{group.itemCount !== 1 ? 's' : ''}
             </p>
           </div>
-          <div className="flex items-center gap-2 shrink-0">
-            <span className="text-base font-bold text-foreground tabular-nums">
+
+          <div className="flex items-center gap-3 shrink-0">
+            <span className="text-[17px] font-bold text-foreground tabular-nums tracking-tight">
               {formatCurrency(group.totalAmount)}
             </span>
-            {expanded ? <ChevronUp size={16} className="text-muted-foreground" /> : <ChevronDown size={16} className="text-muted-foreground" />}
+            <motion.div
+              animate={{ rotate: expanded ? 180 : 0 }}
+              transition={{ duration: 0.25, ease: 'easeInOut' }}
+            >
+              <ChevronDown size={16} className="text-muted-foreground/60" />
+            </motion.div>
           </div>
         </button>
 
+        {/* Expandable content */}
         <AnimatePresence>
           {expanded && (
             <motion.div
               initial={{ height: 0, opacity: 0 }}
               animate={{ height: 'auto', opacity: 1 }}
               exit={{ height: 0, opacity: 0 }}
-              transition={{ duration: 0.25, ease: 'easeOut' }}
+              transition={{ duration: 0.3, ease: [0.23, 1, 0.32, 1] }}
               className="overflow-hidden"
             >
-              <div className="bg-muted/20 p-3">
+              <div className="px-3 pb-3 pt-1">
                 <SaleItemsGrid
                   items={group.items}
                   categories={categories}
@@ -296,8 +448,9 @@ function DayCard({
             </motion.div>
           )}
         </AnimatePresence>
-      </div>
+      </motion.div>
 
+      {/* Modals */}
       {detailItem && (
         <SaleDetailModal
           item={detailItem}
@@ -325,6 +478,8 @@ function DayCard({
     </>
   )
 }
+
+/* ─── main list ─── */
 
 interface SalesListProps {
   sessions:   SaleSession[]

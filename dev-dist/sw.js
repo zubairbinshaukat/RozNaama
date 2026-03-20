@@ -78,12 +78,13 @@ define(['./workbox-6fc00345'], (function (workbox) { 'use strict';
    * See https://goo.gl/S9QRab
    */
   workbox.precacheAndRoute([{
-    "url": "index.html",
-    "revision": "0.nph1i43uan8"
+    "url": "/index.html",
+    "revision": "0.dhd7k5iend8"
   }], {});
   workbox.cleanupOutdatedCaches();
-  workbox.registerRoute(new workbox.NavigationRoute(workbox.createHandlerBoundToURL("index.html"), {
-    allowlist: [/^\/$/]
+  workbox.registerRoute(new workbox.NavigationRoute(workbox.createHandlerBoundToURL("/index.html"), {
+    allowlist: [/^\/$/],
+    denylist: [/^\/api\//]
   }));
   workbox.registerRoute(/^https:\/\/.*\.convex\.cloud\/.*/i, new workbox.NetworkFirst({
     "cacheName": "convex-api-cache",

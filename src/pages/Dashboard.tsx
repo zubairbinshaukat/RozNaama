@@ -122,7 +122,7 @@ export default function Dashboard() {
     <div className="min-h-dvh bg-background">
       {/* ── Top bar ──────────────────────────────────────────────────────── */}
       <header className="sticky top-0 z-40 bg-background/90 backdrop-blur-xl border-b border-border/50 pt-[max(0,env(safe-area-inset-top))]">
-        <div className="mx-auto px-4 sm:px-6 h-14 flex items-center justify-between gap-4 max-w-3xl">
+        <div className="mx-auto px-4 sm:px-6 h-14 flex items-center justify-between gap-4 max-w-5xl">
           {/* Logo */}
           <Link to="/" className="flex items-center gap-2 shrink-0">
             <div className="w-7 h-7 rounded-[8px] bg-gradient-brand flex items-center justify-center shadow-glow-sm">
@@ -162,7 +162,7 @@ export default function Dashboard() {
       </header>
 
       {/* ── Main content ─────────────────────────────────────────────────── */}
-      <main className="mx-auto px-4 sm:px-6 py-6 pb-28 max-w-3xl">
+      <main className="mx-auto px-4 sm:px-6 py-6 pb-28 max-w-5xl">
         <section aria-label="Greeting" className="mb-6">
           <p className="text-[0.9375rem] sm:text-lg leading-snug">
             <span className="text-muted-foreground font-medium">{getGreeting()}, </span>
