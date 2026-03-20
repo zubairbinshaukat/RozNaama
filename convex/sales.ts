@@ -1,5 +1,6 @@
 import { ConvexError, v } from 'convex/values'
 import { mutation, query, type MutationCtx, type QueryCtx } from './_generated/server'
+import type { Id } from './_generated/dataModel'
 async function requireUser(ctx: QueryCtx | MutationCtx) {
   const identity = await ctx.auth.getUserIdentity()
   if (!identity) throw new ConvexError('Unauthorized')
@@ -29,6 +30,31 @@ export const listByCategoryId = query({
 
     rows.sort((a, b) => b.saleDate - a.saleDate)
     return rows
+  },
+})
+
+/** Total number of sale line items per category */
+export const getCountsByCategory = query({
+  args: {},
+  handler: async (ctx) => {
+    const user = await requireUser(ctx)
+    if (!user) return []
+
+    const rows = await ctx.db
+      .query('sales')
+      .withIndex('by_userId_saleDate', (q) => q.eq('userId', user._id))
+      .collect()
+
+    const totals = new Map<Id<'categories'>, number>()
+    for (const sale of rows) {
+      if (!sale.categoryId) continue
+      totals.set(sale.categoryId, (totals.get(sale.categoryId) ?? 0) + 1)
+    }
+
+    return Array.from(totals.entries()).map(([categoryId, count]) => ({
+      categoryId,
+      count,
+    }))
   },
 })
 

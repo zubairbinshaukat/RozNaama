@@ -44,12 +44,22 @@ export type DashboardStats = {
   topCategoryName: string | null
 }
 
+export type CategorySalesCount = {
+  categoryId: Id<'categories'>
+  count:      number
+}
+
 /** All sales in a category (for category detail modal) */
 export function useSalesByCategoryId(categoryId: Id<'categories'> | null): SaleItem[] | undefined {
   return useQuery(
     api.sales.listByCategoryId,
     categoryId === null ? 'skip' : { categoryId },
   ) as SaleItem[] | undefined
+}
+
+/** Number of sale line items per category (for manage categories UI) */
+export function useSalesCountsByCategory(): CategorySalesCount[] | undefined {
+  return useQuery(api.sales.getCountsByCategory) as CategorySalesCount[] | undefined
 }
 
 /** Get sessions+items for today */

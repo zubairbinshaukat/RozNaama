@@ -4,6 +4,7 @@ import { motion } from 'framer-motion'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 import { useCategories, useUpdateCategory, useRemoveCategory } from '@/hooks/useCategories'
+import { useSalesCountsByCategory } from '@/hooks/useSales'
 import { useToast } from '@/components/shared/Toast'
 import { CATEGORY_COLORS } from '@/lib/constants'
 import ConfirmModal from './ConfirmModal'
@@ -28,6 +29,7 @@ export default function ManageCategoriesModal({ onClose }: ManageCategoriesModal
   const categories    = useCategories()
   const updateCat     = useUpdateCategory()
   const removeCat     = useRemoveCategory()
+  const salesCounts   = useSalesCountsByCategory()
   const { showToast } = useToast()
 
   const [editingId,   setEditingId]   = useState<string | null>(null)
@@ -56,6 +58,11 @@ export default function ManageCategoriesModal({ onClose }: ManageCategoriesModal
   }
 
   const sorted = categories ? [...categories].sort((a, b) => a.createdAt - b.createdAt) : []
+
+  const salesCountByCategoryId = new Map<Id<'categories'>, number>()
+  if (salesCounts) {
+    for (const row of salesCounts) salesCountByCategoryId.set(row.categoryId, row.count)
+  }
 
   return (
     <>
@@ -140,7 +147,7 @@ export default function ManageCategoriesModal({ onClose }: ManageCategoriesModal
                 <motion.div
                   animate={{ y: [0, -5, 0] }}
                   transition={{ repeat: Infinity, duration: 3, ease: 'easeInOut' }}
-                  className="w-16 h-16 rounded-3xl bg-gradient-to-br from-primary/12 via-primary/4 to-transparent flex items-center justify-center border border-primary/8"
+                  className="w-16 h-16 rounded-3xl bg-linear-to-br from-primary/12 via-primary/4 to-transparent flex items-center justify-center border border-primary/8"
                 >
                   <Layers size={26} className="text-primary/40" strokeWidth={1.5} />
                 </motion.div>
@@ -170,6 +177,7 @@ export default function ManageCategoriesModal({ onClose }: ManageCategoriesModal
                       key={cat._id}
                       category={cat}
                       index={i}
+                      salesCount={salesCounts ? (salesCountByCategoryId.get(cat._id) ?? 0) : undefined}
                       onView={() => setViewingCat(cat)}
                       onEdit={() => setEditingId(cat._id)}
                       onDelete={() => setDeletingCat(cat)}
@@ -218,12 +226,14 @@ export default function ManageCategoriesModal({ onClose }: ManageCategoriesModal
 function CategoryRow({
   category,
   index,
+  salesCount,
   onView,
   onEdit,
   onDelete,
 }: {
   category: Category
   index:    number
+  salesCount: number | undefined
   onView:   () => void
   onEdit:   () => void
   onDelete: () => void
@@ -258,10 +268,16 @@ function CategoryRow({
           boxShadow: `0 2px 6px rgba(${r},${g},${b},0.10)`,
         }}
       >
-        <span
-          className="w-3.5 h-3.5 rounded-full"
-          style={{ backgroundColor: category.color }}
-        />
+        {salesCount === undefined ? (
+          <div className="skeleton w-8 h-3 rounded-md" />
+        ) : (
+          <span
+            className="text-[11px] font-bold tabular-nums tracking-tight"
+            style={{ color: category.color }}
+          >
+            {salesCount}
+          </span>
+        )}
       </div>
 
       {/* Name */}
