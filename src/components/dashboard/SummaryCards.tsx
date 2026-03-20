@@ -1,7 +1,6 @@
 import { Banknote, Hash, Star, TrendingUp, CalendarDays, CalendarRange, BarChart2 } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { cn } from '@/lib/utils'
-import { formatCurrency } from '@/lib/utils'
+import { cn, formatAmount } from '@/lib/utils'
 import type { DashboardStats } from '@/hooks/useSales'
 
 // ── Skeleton ──────────────────────────────────────────────────────────────
@@ -43,15 +42,15 @@ function SummaryCard({ icon, label, value, subLabel, accent = 'bg-primary/10', c
         className,
       )}
     >
-      <div className="flex items-center justify-between">
-        <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-widest">
+      <div className="flex items-start justify-between gap-3 min-w-0">
+        <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-widest min-w-0 break-words">
           {label}
         </span>
-        <div className={cn('w-9 h-9 rounded-xl flex items-center justify-center', accent)}>
+        <div className={cn('w-9 h-9 rounded-xl flex items-center justify-center shrink-0', accent)}>
           {icon}
         </div>
       </div>
-      <p className="text-[1.6rem] font-logo font-bold text-foreground tracking-tight leading-none">
+      <p className="text-[1.6rem] font-logo font-bold text-foreground tracking-tight leading-tight min-w-0 break-words">
         {value}
       </p>
       {subLabel && (
@@ -87,7 +86,7 @@ export default function SummaryCards({ stats, activeTab }: SummaryCardsProps) {
       {
         icon:     <Banknote className="text-primary" size={18} strokeWidth={1.5} />,
         label:    "Today's Total",
-        value:    formatCurrency(stats.todayTotal),
+        value:    formatAmount(stats.todayTotal),
         subLabel: `${stats.todayCount} sale${stats.todayCount !== 1 ? 's' : ''}`,
         accent:   'bg-primary/10',
       },
@@ -108,7 +107,7 @@ export default function SummaryCards({ stats, activeTab }: SummaryCardsProps) {
       {
         icon:     <TrendingUp className="text-violet-500" size={18} strokeWidth={1.5} />,
         label:    'This Week',
-        value:    formatCurrency(stats.weekTotal),
+        value:    formatAmount(stats.weekTotal),
         subLabel: `${stats.weekCount} sales`,
         accent:   'bg-violet-500/10',
       },
@@ -117,7 +116,7 @@ export default function SummaryCards({ stats, activeTab }: SummaryCardsProps) {
       {
         icon:     <CalendarDays className="text-primary" size={18} strokeWidth={1.5} />,
         label:    'Week Total',
-        value:    formatCurrency(stats.weekTotal),
+        value:    formatAmount(stats.weekTotal),
         subLabel: `${stats.weekCount} sales this week`,
         accent:   'bg-primary/10',
       },
@@ -131,14 +130,14 @@ export default function SummaryCards({ stats, activeTab }: SummaryCardsProps) {
       {
         icon:     <BarChart2 className="text-amber-500" size={18} strokeWidth={1.5} />,
         label:    'Daily Avg',
-        value:    formatCurrency(weekDailyAvg),
+        value:    formatAmount(weekDailyAvg),
         subLabel: 'avg sales per day',
         accent:   'bg-amber-500/10',
       },
       {
         icon:     <Banknote className="text-violet-500" size={18} strokeWidth={1.5} />,
         label:    "Today's Sales",
-        value:    formatCurrency(stats.todayTotal),
+        value:    formatAmount(stats.todayTotal),
         subLabel: `${stats.todayCount} today`,
         accent:   'bg-violet-500/10',
       },
@@ -147,7 +146,7 @@ export default function SummaryCards({ stats, activeTab }: SummaryCardsProps) {
       {
         icon:     <CalendarRange className="text-primary" size={18} strokeWidth={1.5} />,
         label:    'Month Total',
-        value:    formatCurrency(stats.monthTotal),
+        value:    formatAmount(stats.monthTotal),
         subLabel: `${stats.monthCount} sales this month`,
         accent:   'bg-primary/10',
       },
@@ -161,7 +160,7 @@ export default function SummaryCards({ stats, activeTab }: SummaryCardsProps) {
       {
         icon:     <BarChart2 className="text-amber-500" size={18} strokeWidth={1.5} />,
         label:    'Daily Avg',
-        value:    formatCurrency(monthDailyAvg),
+        value:    formatAmount(monthDailyAvg),
         subLabel: 'avg sales per day',
         accent:   'bg-amber-500/10',
       },

@@ -11,6 +11,11 @@ export function formatCurrency(amount: number): string {
   return `PKR ${amount.toLocaleString('en-PK')}`
 }
 
+/** Numeric amount only (no PKR prefix), for compact displays e.g. summary cards */
+export function formatAmount(amount: number): string {
+  return amount.toLocaleString('en-PK')
+}
+
 /**
  * Format a date timestamp relative to today.
  * - today's date    → "Today"

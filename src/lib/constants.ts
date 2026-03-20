@@ -2,6 +2,9 @@
 export const THEMES = ['light', 'dark', 'midnight', 'ocean', 'forest', 'rose', 'sunset'] as const
 export type Theme = (typeof THEMES)[number]
 
+/** Stored preference: a concrete theme, or random (new roll on each full page load) */
+export type ThemePreference = Theme | 'random'
+
 export const THEME_LABELS: Record<Theme, string> = {
   light:    'Light',
   dark:     'Dark',

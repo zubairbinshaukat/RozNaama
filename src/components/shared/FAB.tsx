@@ -31,7 +31,20 @@ export default function FAB({ onAddCategory, onAddSale, onManageCategories }: FA
   const handle = (fn: () => void) => () => { setOpen(false); fn() }
 
   return (
-    <div ref={fabRef} className="fixed bottom-6 right-6 z-50 flex flex-col items-end gap-3">
+    <>
+      {open && (
+        <button
+          type="button"
+          aria-label="Close menu"
+          className={cn(
+            'fixed inset-0 z-40 cursor-default',
+            'bg-background/75 backdrop-blur-[3px]',
+            'animate-modal-backdrop',
+          )}
+          onClick={() => setOpen(false)}
+        />
+      )}
+      <div ref={fabRef} className="fixed bottom-6 right-6 z-50 flex flex-col items-end gap-3">
       {open && (
         <>
           <FABItem icon={<ShoppingBag size={18} />} label="Add Sale"           onClick={handle(onAddSale)}          delay="0ms"  />
@@ -53,7 +66,8 @@ export default function FAB({ onAddCategory, onAddSale, onManageCategories }: FA
       >
         <Plus size={24} className={cn('transition-transform duration-200', open && 'rotate-45')} />
       </button>
-    </div>
+      </div>
+    </>
   )
 }
 

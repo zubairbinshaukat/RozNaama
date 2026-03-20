@@ -112,25 +112,16 @@ export default function Dashboard() {
   })
 
   const { user } = useUser()
-  const firstName =
-    user?.firstName?.trim() ||
-    user?.fullName?.split(/\s+/)[0]?.trim() ||
+  const displayName =
+    user?.fullName?.trim() ||
+    [user?.firstName, user?.lastName].filter(Boolean).join(' ') ||
     user?.username?.trim() ||
     'there'
 
   return (
     <div className="min-h-dvh bg-background">
-      <div className="mx-auto max-w-3xl px-4 sm:px-6 pt-[max(0.75rem,env(safe-area-inset-top))] pb-2 sm:pb-3">
-        <section aria-label="Greeting">
-          <p className="text-[0.8125rem] sm:text-sm leading-relaxed">
-            <span className="text-muted-foreground font-medium tracking-wide">{getGreeting()}, </span>
-            <span className="font-logo font-semibold text-foreground tracking-tight">{firstName}</span>
-          </p>
-        </section>
-      </div>
-
       {/* ── Top bar ──────────────────────────────────────────────────────── */}
-      <header className="sticky top-0 z-40 bg-background/90 backdrop-blur-xl border-b border-border/50">
+      <header className="sticky top-0 z-40 bg-background/90 backdrop-blur-xl border-b border-border/50 pt-[max(0,env(safe-area-inset-top))]">
         <div className="mx-auto px-4 sm:px-6 h-14 flex items-center justify-between gap-4 max-w-3xl">
           {/* Logo */}
           <Link to="/" className="flex items-center gap-2 shrink-0">
@@ -172,6 +163,12 @@ export default function Dashboard() {
 
       {/* ── Main content ─────────────────────────────────────────────────── */}
       <main className="mx-auto px-4 sm:px-6 py-6 pb-28 max-w-3xl">
+        <section aria-label="Greeting" className="mb-6">
+          <p className="text-[0.9375rem] sm:text-lg leading-snug">
+            <span className="text-muted-foreground font-medium">{getGreeting()}, </span>
+            <span className="font-logo font-semibold text-gradient-brand">{displayName}</span>
+          </p>
+        </section>
 
         {/* Summary cards — tab aware */}
         <section aria-label="Summary" className="mb-6">
