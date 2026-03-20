@@ -1,10 +1,12 @@
 import { useState, useMemo } from 'react'
-import { ChevronDown, ChevronUp, ShoppingBag, Calendar, Pencil, Trash2 } from 'lucide-react'
+import { ChevronDown, ChevronUp, ShoppingBag, Calendar, Pencil, Trash2, Eye } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { cn, formatCurrency, formatDate } from '@/lib/utils'
 import { useDeleteSaleItem } from '@/hooks/useSales'
 import { useToast } from '@/components/shared/Toast'
 import EditSaleModal from '@/components/modals/EditSaleModal'
+import SaleDetailModal from '@/components/modals/SaleDetailModal'
+import CategorySalesModal from '@/components/modals/CategorySalesModal'
 import ConfirmModal  from '@/components/modals/ConfirmModal'
 import type { SaleSession, SaleItem } from '@/hooks/useSales'
 import type { Category } from '@/hooks/useCategories'
@@ -80,66 +82,133 @@ function EmptyState() {
   )
 }
 
-function SaleItemRow({
+function SaleItemCard({
   item,
   categories,
+  onViewDetail,
+  onCategoryOpen,
   onEdit,
   onDelete,
 }: {
-  item:       SaleItem
-  categories: Category[]
-  onEdit:     (item: SaleItem) => void
-  onDelete:   (item: SaleItem) => void
+  item:             SaleItem
+  categories:       Category[]
+  onViewDetail:     (item: SaleItem) => void
+  onCategoryOpen:   (category: Category) => void
+  onEdit:           (item: SaleItem) => void
+  onDelete:         (item: SaleItem) => void
 }) {
   const cat = categories.find((c) => c._id === item.categoryId)
-  const color = cat?.color ?? '#6366F1'
+  const color = cat?.color
 
   return (
-    <div
-      className={cn(
-        'flex items-center gap-3 rounded-xl border border-border/60 bg-card px-3 py-3',
-        'transition-colors hover:bg-muted/30',
-      )}
-    >
+    <div className="h-full min-h-0">
       <div
-        className="w-1 rounded-full shrink-0 self-stretch min-h-10"
-        style={{ backgroundColor: color }}
-      />
-      <div className="flex-1 min-w-0 py-0.5">
-        <p className="text-sm font-medium text-foreground truncate">{item.productName}</p>
-        <div className="flex items-center gap-2 mt-0.5 flex-wrap">
-          {cat && (
-            <span
-              className="text-[10px] font-medium px-2 py-0.5 rounded-md"
-              style={{ backgroundColor: hexToSoftBg(color), color }}
+        className={cn(
+          'rounded-2xl border-2 bg-card p-4 flex flex-col min-h-[160px] h-full',
+          'shadow-card-hover transition-all duration-200 hover:-translate-y-0.5',
+          !color && 'border-border',
+        )}
+        style={color ? { borderColor: color } : undefined}
+      >
+        <div className="flex flex-col gap-2 flex-1 min-h-0 min-w-0">
+          <div className="flex items-start justify-between gap-2">
+            <p className="text-sm font-semibold text-foreground leading-snug line-clamp-2 wrap-break-word min-w-0">
+              {item.productName}
+            </p>
+            <span className="text-sm font-logo font-bold text-foreground tabular-nums tracking-tight shrink-0">
+              {formatCurrency(item.amount)}
+            </span>
+          </div>
+          {item.note && (
+            <p className="text-xs text-muted-foreground line-clamp-2">{item.note}</p>
+          )}
+          {cat ? (
+            <button
+              type="button"
+              onClick={() => onCategoryOpen(cat)}
+              className="text-[10px] font-medium px-2 py-0.5 rounded-md max-w-full truncate text-left w-fit active:scale-[0.98] transition-transform"
+              style={{ backgroundColor: hexToSoftBg(cat.color), color: cat.color }}
             >
               {cat.name}
+            </button>
+          ) : (
+            <span className="text-[10px] font-medium px-2 py-0.5 rounded-md w-fit border border-border/70 bg-muted/25 text-muted-foreground">
+              Uncategorized
             </span>
           )}
-          {item.note && (
-            <span className="text-xs text-muted-foreground truncate max-w-[140px]">{item.note}</span>
-          )}
+        </div>
+        <div className="grid grid-cols-3 gap-1 pt-3 mt-auto">
+          <button
+            type="button"
+            onClick={() => onViewDetail(item)}
+            aria-label="View sale details"
+            className="min-h-10 flex items-center justify-center rounded-xl text-muted-foreground hover:text-foreground hover:bg-muted/80 active:scale-95 transition-all touch-manipulation"
+          >
+            <Eye size={16} />
+          </button>
+          <button
+            type="button"
+            onClick={() => onEdit(item)}
+            aria-label="Edit sale"
+            className="min-h-10 flex items-center justify-center rounded-xl text-muted-foreground hover:text-foreground hover:bg-muted/80 active:scale-95 transition-all touch-manipulation"
+          >
+            <Pencil size={16} />
+          </button>
+          <button
+            type="button"
+            onClick={() => onDelete(item)}
+            aria-label="Delete sale"
+            className="min-h-10 flex items-center justify-center rounded-xl text-muted-foreground hover:text-destructive hover:bg-destructive/10 active:scale-95 transition-all touch-manipulation"
+          >
+            <Trash2 size={16} />
+          </button>
         </div>
       </div>
-      <span className="text-sm font-semibold text-foreground tabular-nums shrink-0">
-        {formatCurrency(item.amount)}
-      </span>
-      <div className="flex items-center gap-0.5 shrink-0">
-        <button
-          onClick={() => onEdit(item)}
-          aria-label="Edit sale"
-          className="min-w-[44px] min-h-[44px] flex items-center justify-center rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted active:scale-95 transition-all touch-manipulation"
-        >
-          <Pencil size={16} />
-        </button>
-        <button
-          onClick={() => onDelete(item)}
-          aria-label="Delete sale"
-          className="min-w-[44px] min-h-[44px] flex items-center justify-center rounded-lg text-muted-foreground hover:text-destructive hover:bg-destructive/10 active:scale-95 transition-all touch-manipulation"
-        >
-          <Trash2 size={16} />
-        </button>
-      </div>
+    </div>
+  )
+}
+
+/** Mobile: 2 columns; md+: 3; xl (main dashboard): 4. Single item stays full width. */
+function SaleItemsGrid({
+  items,
+  categories,
+  onViewDetail,
+  onCategoryOpen,
+  onEdit,
+  onDelete,
+  compact,
+}: {
+  items:            SaleItem[]
+  categories:       Category[]
+  onViewDetail:     (item: SaleItem) => void
+  onCategoryOpen:   (category: Category) => void
+  onEdit:           (item: SaleItem) => void
+  onDelete:         (item: SaleItem) => void
+  compact:          boolean
+}) {
+  const n = items.length
+  if (n === 0) return null
+
+  const gridClass =
+    n === 1
+      ? 'grid-cols-1'
+      : compact
+        ? 'grid-cols-2 md:grid-cols-3'
+        : 'grid-cols-2 md:grid-cols-3 xl:grid-cols-4'
+
+  return (
+    <div className={cn('grid gap-3', gridClass)}>
+      {items.map((item) => (
+        <SaleItemCard
+          key={item._id}
+          item={item}
+          categories={categories}
+          onViewDetail={onViewDetail}
+          onCategoryOpen={onCategoryOpen}
+          onEdit={onEdit}
+          onDelete={onDelete}
+        />
+      ))}
     </div>
   )
 }
@@ -148,13 +217,17 @@ function DayCard({
   group,
   categories,
   isOpenByDefault,
+  compact,
 }: {
-  group:          DayGroup
-  categories:     Category[]
+  group:           DayGroup
+  categories:      Category[]
   isOpenByDefault: boolean
+  compact:         boolean
 }) {
   const [expanded,     setExpanded]     = useState(isOpenByDefault)
-  const [editingItem,  setEditingItem]  = useState<SaleItem | null>(null)
+  const [editingItem,   setEditingItem]   = useState<SaleItem | null>(null)
+  const [detailItem,    setDetailItem]    = useState<SaleItem | null>(null)
+  const [categoryModal, setCategoryModal] = useState<Category | null>(null)
   const [deletingItem, setDeletingItem] = useState<SaleItem | null>(null)
   const [deleting,     setDeleting]     = useState(false)
 
@@ -209,24 +282,32 @@ function DayCard({
               transition={{ duration: 0.25, ease: 'easeOut' }}
               className="overflow-hidden"
             >
-              <div className="border-t border-border/60 bg-muted/5 p-3">
-                <div className="flex flex-col gap-2">
-                  {group.items.map((item) => (
-                    <SaleItemRow
-                      key={item._id}
-                      item={item}
-                      categories={categories}
-                      onEdit={setEditingItem}
-                      onDelete={setDeletingItem}
-                    />
-                  ))}
-                </div>
+              <div className="bg-muted/20 p-3">
+                <SaleItemsGrid
+                  items={group.items}
+                  categories={categories}
+                  onViewDetail={setDetailItem}
+                  onCategoryOpen={setCategoryModal}
+                  onEdit={setEditingItem}
+                  onDelete={setDeletingItem}
+                  compact={compact}
+                />
               </div>
             </motion.div>
           )}
         </AnimatePresence>
       </div>
 
+      {detailItem && (
+        <SaleDetailModal
+          item={detailItem}
+          categories={categories}
+          onClose={() => setDetailItem(null)}
+        />
+      )}
+      {categoryModal && (
+        <CategorySalesModal category={categoryModal} onClose={() => setCategoryModal(null)} />
+      )}
       {editingItem && (
         <EditSaleModal item={editingItem} categories={categories} onClose={() => setEditingItem(null)} />
       )}
@@ -266,6 +347,7 @@ export default function SalesList({ sessions, categories, compact = false }: Sal
           group={group}
           categories={categories}
           isOpenByDefault={group.dateKey === todayKey}
+          compact={compact}
         />
       ))}
     </div>

@@ -5,6 +5,8 @@ import { cn, formatCurrency } from '@/lib/utils'
 import { useRecordSales } from '@/hooks/useSales'
 import { useCategories } from '@/hooks/useCategories'
 import { useToast } from '@/components/shared/Toast'
+import CategorySelect from '@/components/shared/CategorySelect'
+import { useVisualViewportBottomInset } from '@/hooks/useVisualViewportInset'
 import { MAX_SALE_ITEMS } from '@/lib/constants'
 import type { Id } from '../../../convex/_generated/dataModel'
 
@@ -46,6 +48,7 @@ export default function AddSaleModal({ onClose }: AddSaleModalProps) {
   const recordSales = useRecordSales()
   const categories  = useCategories()
   const { showToast } = useToast()
+  const keyboardInset = useVisualViewportBottomInset()
   const firstInputRef = useRef<HTMLInputElement>(null)
   const scrollContainerRef = useRef<HTMLDivElement>(null)
 
@@ -157,7 +160,7 @@ export default function AddSaleModal({ onClose }: AddSaleModalProps) {
       aria-modal="true"
       aria-labelledby="add-sale-title"
       style={{
-        // Keep bottom sheet above the home indicator on iOS.
+        // Keep bottom sheet above the home indicator + mobile keyboard overlap.
         paddingBottom: 'calc(1rem + env(safe-area-inset-bottom))',
         paddingTop: 'calc(1rem + env(safe-area-inset-top))',
       }}
@@ -231,7 +234,12 @@ export default function AddSaleModal({ onClose }: AddSaleModalProps) {
           </div>
 
           {/* Footer */}
-          <div className="px-5 pb-[calc(1.25rem+env(safe-area-inset-bottom))] pt-4 border-t border-border/80 shrink-0 flex items-center justify-between gap-4">
+          <div
+            className="px-5 pt-4 border-t border-border/80 shrink-0 flex items-center justify-between gap-4"
+            style={{
+              paddingBottom: `calc(1.25rem + env(safe-area-inset-bottom) + ${keyboardInset}px)`,
+            }}
+          >
             <div className="text-sm font-semibold text-foreground">
               Total:{' '}
               <span className="text-primary text-base">
@@ -355,21 +363,12 @@ function SaleRowInput({
 
       {/* Category + Note */}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-        <select
+        <CategorySelect
+          categories={categories}
           value={row.categoryId}
-          onChange={(e) => onChange(row.id, 'categoryId', e.target.value)}
+          onChange={(v) => onChange(row.id, 'categoryId', v)}
           aria-label="Category (optional)"
-          className={cn(
-            'h-9 px-2.5 rounded-lg border bg-background text-sm text-foreground',
-            'focus:outline-none focus:ring-2 focus:ring-ring focus:border-transparent transition-shadow',
-            !row.categoryId && 'text-muted-foreground',
-          )}
-        >
-          <option value="">No category</option>
-          {categories.map((c) => (
-            <option key={c._id} value={c._id}>{c.name}</option>
-          ))}
-        </select>
+        />
 
         <input
           type="text"

@@ -1,6 +1,5 @@
 import { ConvexError, v } from 'convex/values'
 import { mutation, query, type MutationCtx, type QueryCtx } from './_generated/server'
-
 async function requireUser(ctx: QueryCtx | MutationCtx) {
   const identity = await ctx.auth.getUserIdentity()
   if (!identity) throw new ConvexError('Unauthorized')
@@ -13,6 +12,25 @@ async function requireUser(ctx: QueryCtx | MutationCtx) {
     .withIndex('by_email', (q) => q.eq('email', email))
     .first()
 }
+
+/** All sale line items for a category (newest by saleDate first in handler sort) */
+export const listByCategoryId = query({
+  args: { categoryId: v.id('categories') },
+  handler: async (ctx, args) => {
+    const user = await requireUser(ctx)
+    if (!user) return []
+
+    const rows = await ctx.db
+      .query('sales')
+      .withIndex('by_userId_categoryId', (q) =>
+        q.eq('userId', user._id).eq('categoryId', args.categoryId)
+      )
+      .collect()
+
+    rows.sort((a, b) => b.saleDate - a.saleDate)
+    return rows
+  },
+})
 
 /** Get all sale items for a date range */
 export const getForDateRange = query({

@@ -1,9 +1,9 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import { Sun, CalendarDays, CalendarRange, TrendingUp, Download } from 'lucide-react'
-import { UserButton } from '@clerk/clerk-react'
+import { UserButton, useUser } from '@clerk/clerk-react'
 import { Link } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
-import { cn } from '@/lib/utils'
+import { cn, getGreeting } from '@/lib/utils'
 import ThemeSwitcher   from '@/components/shared/ThemeSwitcher'
 import SummaryCards    from '@/components/dashboard/SummaryCards'
 import DailyTab        from '@/components/dashboard/DailyTab'
@@ -15,6 +15,8 @@ import AddSaleModal          from '@/components/modals/AddSaleModal'
 import ManageCategoriesModal from '@/components/modals/ManageCategoriesModal'
 import IOSInstallModal      from '@/components/modals/IOSInstallModal'
 import { useDashboardStats } from '@/hooks/useSales'
+import { useHorizontalTabSwipe } from '@/hooks/useHorizontalTabSwipe'
+import { useMediaQueryMatch } from '@/hooks/useMediaQueryMatch'
 
 type Tab = 'daily' | 'weekly' | 'monthly'
 
@@ -88,12 +90,45 @@ export default function Dashboard() {
   const [showIOSInstallModal,   setShowIOSInstallModal]   = useState(false)
 
   const stats = useDashboardStats()
+  const tabSwipeRef = useRef<HTMLDivElement>(null)
+  const mobileLayout = useMediaQueryMatch('(max-width: 639px)')
+  const reduceMotion = useMediaQueryMatch('(prefers-reduced-motion: reduce)')
+
+  const goTabNext = useCallback(() => {
+    setActiveTab((t) => (t === 'daily' ? 'weekly' : t === 'weekly' ? 'monthly' : t))
+  }, [])
+  const goTabPrev = useCallback(() => {
+    setActiveTab((t) => (t === 'monthly' ? 'weekly' : t === 'weekly' ? 'daily' : t))
+  }, [])
+
+  useHorizontalTabSwipe(tabSwipeRef, {
+    enabled: mobileLayout && !reduceMotion,
+    onSwipeNext: goTabNext,
+    onSwipePrev: goTabPrev,
+  })
+
   const { canInstall, install, isIOS } = usePWAInstall({
     onIOSInstall: () => setShowIOSInstallModal(true),
   })
 
+  const { user } = useUser()
+  const firstName =
+    user?.firstName?.trim() ||
+    user?.fullName?.split(/\s+/)[0]?.trim() ||
+    user?.username?.trim() ||
+    'there'
+
   return (
     <div className="min-h-dvh bg-background">
+      <div className="mx-auto max-w-3xl px-4 sm:px-6 pt-[max(0.75rem,env(safe-area-inset-top))] pb-2 sm:pb-3">
+        <section aria-label="Greeting">
+          <p className="text-[0.8125rem] sm:text-sm leading-relaxed">
+            <span className="text-muted-foreground font-medium tracking-wide">{getGreeting()}, </span>
+            <span className="font-logo font-semibold text-foreground tracking-tight">{firstName}</span>
+          </p>
+        </section>
+      </div>
+
       {/* ── Top bar ──────────────────────────────────────────────────────── */}
       <header className="sticky top-0 z-40 bg-background/90 backdrop-blur-xl border-b border-border/50">
         <div className="mx-auto px-4 sm:px-6 h-14 flex items-center justify-between gap-4 max-w-3xl">
@@ -165,21 +200,27 @@ export default function Dashboard() {
           ))}
         </div>
 
-        {/* Tab panels */}
-        <AnimatePresence mode="wait">
-          <motion.section
-            key={activeTab}
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -6 }}
-            transition={{ duration: 0.25, ease: [0.22, 1, 0.36, 1] }}
-            aria-label={`${activeTab} view`}
-          >
-            {activeTab === 'daily'   && <DailyTab />}
-            {activeTab === 'weekly'  && <WeeklyChart />}
-            {activeTab === 'monthly' && <MonthlyChart />}
-          </motion.section>
-        </AnimatePresence>
+        {/* Tab panels — swipe left/right on small screens to change period */}
+        <div
+          ref={tabSwipeRef}
+          className="min-h-48"
+          style={{ touchAction: 'pan-y' }}
+        >
+          <AnimatePresence mode="wait">
+            <motion.section
+              key={activeTab}
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -6 }}
+              transition={{ duration: 0.25, ease: [0.22, 1, 0.36, 1] }}
+              aria-label={`${activeTab} view`}
+            >
+              {activeTab === 'daily'   && <DailyTab />}
+              {activeTab === 'weekly'  && <WeeklyChart />}
+              {activeTab === 'monthly' && <MonthlyChart />}
+            </motion.section>
+          </AnimatePresence>
+        </div>
       </main>
 
       {/* ── FAB ──────────────────────────────────────────────────────────── */}

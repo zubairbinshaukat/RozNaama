@@ -1,9 +1,11 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useMemo } from 'react'
 import { X, Check, Loader2, AlertCircle } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { cn, formatCurrency } from '@/lib/utils'
 import { useUpdateSaleItem } from '@/hooks/useSales'
 import { useToast } from '@/components/shared/Toast'
+import CategorySelect from '@/components/shared/CategorySelect'
+import { useVisualViewportBottomInset } from '@/hooks/useVisualViewportInset'
 import type { SaleItem } from '@/hooks/useSales'
 import type { Category } from '@/hooks/useCategories'
 import type { Id } from '../../../convex/_generated/dataModel'
@@ -24,7 +26,18 @@ export default function EditSaleModal({ item, categories, onClose }: EditSaleMod
 
   const updateItem  = useUpdateSaleItem()
   const { showToast } = useToast()
+  const keyboardInset = useVisualViewportBottomInset()
   const nameRef     = useRef<HTMLInputElement>(null)
+
+  const initialSnapshot = useMemo(
+    () => ({
+      productName: item.productName.trim(),
+      amount:      item.amount,
+      categoryId:  item.categoryId ?? '',
+      note:        (item.note ?? '').trim(),
+    }),
+    [item],
+  )
 
   useEffect(() => { nameRef.current?.focus() }, [])
 
@@ -46,6 +59,18 @@ export default function EditSaleModal({ item, categories, onClose }: EditSaleMod
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!validate()) return
+
+    const amt = parseFloat(amount)
+    const nextNote = note.trim()
+    if (
+      productName.trim() === initialSnapshot.productName &&
+      amt === initialSnapshot.amount &&
+      categoryId === initialSnapshot.categoryId &&
+      nextNote === initialSnapshot.note
+    ) {
+      showToast('No fields were updated.', 'info')
+      return
+    }
 
     setSaving(true)
     try {
@@ -78,9 +103,9 @@ export default function EditSaleModal({ item, categories, onClose }: EditSaleMod
         aria-hidden
       />
 
-      <div className="relative w-full max-w-md bg-card border border-border rounded-2xl shadow-2xl animate-modal-content">
+      <div className="relative w-full max-w-md max-h-[min(92dvh,calc(100vh-2rem))] flex flex-col bg-card border border-border rounded-2xl shadow-2xl animate-modal-content overflow-hidden">
         {/* Header */}
-        <div className="flex items-center justify-between px-5 pt-5 pb-4 border-b border-border">
+        <div className="flex items-center justify-between px-5 pt-5 pb-4 border-b border-border shrink-0">
           <h2 id="edit-sale-title" className="text-base font-semibold text-foreground">Edit Sale</h2>
           <button
             onClick={() => { if (!saving) onClose() }}
@@ -92,7 +117,11 @@ export default function EditSaleModal({ item, categories, onClose }: EditSaleMod
           </button>
         </div>
 
-        <form onSubmit={handleSubmit} className="px-5 py-5 flex flex-col gap-4">
+        <form
+          onSubmit={handleSubmit}
+          className="px-5 pt-5 flex flex-col gap-4 min-h-0 overflow-y-auto flex-1"
+          style={{ paddingBottom: `calc(1.25rem + env(safe-area-inset-bottom) + ${keyboardInset}px)` }}
+        >
           {/* Product name */}
           <div className="flex flex-col gap-1.5">
             <label htmlFor="edit-product" className="text-sm font-medium text-foreground">
@@ -153,22 +182,14 @@ export default function EditSaleModal({ item, categories, onClose }: EditSaleMod
           {/* Category + Note */}
           <div className="grid grid-cols-2 gap-3">
             <div className="flex flex-col gap-1.5">
-              <label htmlFor="edit-category" className="text-sm font-medium text-foreground">Category</label>
-              <select
-                id="edit-category"
+              <span id="edit-category-label" className="text-sm font-medium text-foreground">Category</span>
+              <CategorySelect
+                categories={categories}
                 value={categoryId}
-                onChange={(e) => setCategoryId(e.target.value)}
-                className={cn(
-                  'h-10 px-2.5 rounded-lg border bg-background text-sm text-foreground',
-                  'focus:outline-none focus:ring-2 focus:ring-ring focus:border-transparent transition-shadow',
-                  !categoryId && 'text-muted-foreground',
-                )}
-              >
-                <option value="">No category</option>
-                {categories.map((c) => (
-                  <option key={c._id} value={c._id}>{c.name}</option>
-                ))}
-              </select>
+                onChange={setCategoryId}
+                aria-labelledby="edit-category-label"
+                triggerClassName="h-10 min-h-10"
+              />
             </div>
             <div className="flex flex-col gap-1.5">
               <label htmlFor="edit-note" className="text-sm font-medium text-foreground">Note</label>

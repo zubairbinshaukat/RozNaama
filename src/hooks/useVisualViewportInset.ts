@@ -1,0 +1,32 @@
+import { useState, useEffect } from 'react'
+
+/**
+ * Extra bottom inset (px) when the on-screen keyboard shrinks the visual viewport
+ * (mobile browsers). Use on modal sheets so footers stay above the keyboard.
+ */
+export function useVisualViewportBottomInset(): number {
+  const [inset, setInset] = useState(0)
+
+  useEffect(() => {
+    const vv = window.visualViewport
+    if (!vv) return
+
+    const update = () => {
+      const overlap = Math.max(
+        0,
+        window.innerHeight - vv.height - (vv.offsetTop ?? 0),
+      )
+      setInset(Math.round(overlap))
+    }
+
+    update()
+    vv.addEventListener('resize', update)
+    vv.addEventListener('scroll', update)
+    return () => {
+      vv.removeEventListener('resize', update)
+      vv.removeEventListener('scroll', update)
+    }
+  }, [])
+
+  return inset
+}

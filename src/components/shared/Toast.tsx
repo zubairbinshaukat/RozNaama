@@ -1,9 +1,9 @@
 import { createContext, useCallback, useContext, useState, useEffect, useRef } from 'react'
-import { CheckCircle2, AlertCircle, X } from 'lucide-react'
+import { CheckCircle2, AlertCircle, Info, X } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { TOAST_DURATION } from '@/lib/constants'
 
-export type ToastType = 'success' | 'error'
+export type ToastType = 'success' | 'error' | 'info'
 
 export type ToastItem = {
   id:      string
@@ -37,30 +37,36 @@ function Toast({ item, onDismiss }: { item: ToastItem; onDismiss: (id: string) =
     return () => { if (timerRef.current) clearTimeout(timerRef.current) }
   }, [dismiss])
 
-  const isSuccess = item.type === 'success'
+  const variant = item.type
 
   return (
     <div
       role="alert"
       aria-live="polite"
       className={cn(
-        'flex items-start gap-3 w-80 max-w-[calc(100vw-2rem)] rounded-xl px-4 py-3 shadow-xl border',
-        'text-sm font-medium text-white',
+        'flex items-start gap-3 w-80 max-w-[calc(100vw-2rem)] rounded-xl px-4 py-3 shadow-xl border backdrop-blur-sm',
+        'text-sm font-medium text-card-foreground',
         exiting ? 'animate-toast-out' : 'animate-toast-in',
-        isSuccess
-          ? 'bg-emerald-600 border-emerald-500'
-          : 'bg-red-600 border-red-500',
+        variant === 'success' && 'bg-card border-primary/35',
+        variant === 'error' && 'bg-card border-destructive/40',
+        variant === 'info' && 'bg-card border-border',
       )}
     >
-      {isSuccess
-        ? <CheckCircle2 size={18} className="shrink-0 mt-0.5" />
-        : <AlertCircle  size={18} className="shrink-0 mt-0.5" />
-      }
+      {variant === 'success' && (
+        <CheckCircle2 size={18} className="shrink-0 mt-0.5 text-primary" />
+      )}
+      {variant === 'error' && (
+        <AlertCircle size={18} className="shrink-0 mt-0.5 text-destructive" />
+      )}
+      {variant === 'info' && (
+        <Info size={18} className="shrink-0 mt-0.5 text-muted-foreground" />
+      )}
       <span className="flex-1 leading-snug">{item.message}</span>
       <button
+        type="button"
         onClick={dismiss}
         aria-label="Dismiss notification"
-        className="shrink-0 opacity-70 hover:opacity-100 transition-opacity active:scale-95"
+        className="shrink-0 text-muted-foreground opacity-80 hover:opacity-100 transition-opacity active:scale-95"
       >
         <X size={16} />
       </button>

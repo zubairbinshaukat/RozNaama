@@ -1,11 +1,12 @@
 import { useState, useEffect } from 'react'
-import { X, Pencil, Trash2, Check, Loader2, AlertCircle, Layers } from 'lucide-react'
+import { X, Pencil, Trash2, Check, Loader2, AlertCircle, Layers, Eye } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 import { useCategories, useUpdateCategory, useRemoveCategory } from '@/hooks/useCategories'
 import { useToast } from '@/components/shared/Toast'
 import { CATEGORY_COLORS } from '@/lib/constants'
 import ConfirmModal from './ConfirmModal'
+import CategorySalesModal from './CategorySalesModal'
 import type { Category } from '@/hooks/useCategories'
 import type { Id } from '../../../convex/_generated/dataModel'
 
@@ -21,6 +22,7 @@ export default function ManageCategoriesModal({ onClose }: ManageCategoriesModal
 
   const [editingId,   setEditingId]   = useState<string | null>(null)
   const [deletingCat, setDeletingCat] = useState<Category | null>(null)
+  const [viewingCat,  setViewingCat]  = useState<Category | null>(null)
   const [deleting,    setDeleting]    = useState(false)
 
   useEffect(() => {
@@ -120,6 +122,15 @@ export default function ManageCategoriesModal({ onClose }: ManageCategoriesModal
                       </span>
                       <div className="flex items-center gap-1 shrink-0">
                         <button
+                          type="button"
+                          onClick={() => setViewingCat(cat)}
+                          aria-label={`View sales for ${cat.name}`}
+                          className="p-1.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted active:scale-95 transition-all"
+                        >
+                          <Eye size={14} />
+                        </button>
+                        <button
+                          type="button"
                           onClick={() => setEditingId(cat._id)}
                           aria-label={`Edit ${cat.name}`}
                           className="p-1.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted active:scale-95 transition-all"
@@ -127,6 +138,7 @@ export default function ManageCategoriesModal({ onClose }: ManageCategoriesModal
                           <Pencil size={14} />
                         </button>
                         <button
+                          type="button"
                           onClick={() => setDeletingCat(cat)}
                           aria-label={`Delete ${cat.name}`}
                           className="p-1.5 rounded-lg text-muted-foreground hover:text-destructive hover:bg-destructive/10 active:scale-95 transition-all"
@@ -154,6 +166,10 @@ export default function ManageCategoriesModal({ onClose }: ManageCategoriesModal
           </div>
         </div>
       </div>
+
+      {viewingCat && (
+        <CategorySalesModal category={viewingCat} onClose={() => setViewingCat(null)} />
+      )}
 
       {/* Delete confirmation */}
       {deletingCat && (
@@ -186,11 +202,16 @@ function EditCategoryRow({
   const [color,   setColor]   = useState<string>(category.color)
   const [saving,  setSaving]  = useState(false)
   const [error,   setError]   = useState<string | null>(null)
+  const { showToast } = useToast()
 
   const handleSave = async () => {
     if (!name.trim()) { setError('Name is required'); return }
+    if (name.trim() === category.name && color === category.color) {
+      showToast('No fields were updated.', 'info')
+      return
+    }
     setSaving(true)
-    try { await onSave(name, color) }
+    try { await onSave(name.trim(), color) }
     catch { setError('Could not save. Try again.') }
     finally { setSaving(false) }
   }

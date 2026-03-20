@@ -44,6 +44,14 @@ export type DashboardStats = {
   topCategoryName: string | null
 }
 
+/** All sales in a category (for category detail modal) */
+export function useSalesByCategoryId(categoryId: Id<'categories'> | null): SaleItem[] | undefined {
+  return useQuery(
+    api.sales.listByCategoryId,
+    categoryId === null ? 'skip' : { categoryId },
+  ) as SaleItem[] | undefined
+}
+
 /** Get sessions+items for today */
 export function useTodaySessions(): SaleSession[] | undefined {
   return useQuery(api.saleSessions.getForDate, {
