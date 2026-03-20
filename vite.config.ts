@@ -49,6 +49,9 @@ export default defineConfig({
             handler: 'NetworkFirst',
             options: {
               cacheName: 'convex-api-cache',
+              // Prevent long blocking waits when the network is slow.
+              // After the timeout, Workbox falls back to cache (if present).
+              networkTimeoutSeconds: 5,
               expiration: {
                 maxEntries: 50,
                 maxAgeSeconds: 60 * 60 * 24, // 24 hours

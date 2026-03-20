@@ -133,25 +133,6 @@ export default function Dashboard() {
 
           {/* Right side */}
           <div className="flex items-center gap-2 ml-auto">
-            {/* PWA Install button */}
-            <AnimatePresence>
-              {canInstall && (
-                <motion.button
-                  initial={{ opacity: 0, scale: 0.9 }}
-                  animate={{ opacity: 1, scale: 1 }}
-                  exit={{ opacity: 0, scale: 0.9 }}
-                  transition={{ duration: 0.25, ease: [0.22, 1, 0.36, 1] }}
-                  onClick={install}
-                  aria-label={isIOS ? 'Add to Home Screen' : 'Install app'}
-                  title={isIOS ? 'Add to Home Screen' : 'Install App'}
-                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold bg-primary/10 text-primary hover:bg-primary/20 active:scale-95 transition-all"
-                >
-                  <Download size={13} />
-                  <span className="inline sm:hidden">{isIOS ? 'Add' : 'Install'}</span>
-                  <span className="hidden sm:inline">{isIOS ? 'Add to Home Screen' : 'Install'}</span>
-                </motion.button>
-              )}
-            </AnimatePresence>
             <ThemeSwitcher />
             <UserButton
               afterSignOutUrl="/"
@@ -169,6 +150,31 @@ export default function Dashboard() {
             <span className="font-logo font-semibold text-gradient-brand">{displayName}</span>
           </p>
         </section>
+
+        {/* PWA Install CTA (only when not installed) */}
+        <AnimatePresence>
+          {canInstall && (
+            <motion.div
+              initial={{ opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: 6 }}
+              transition={{ duration: 0.2, ease: [0.22, 1, 0.36, 1] }}
+              className="mb-6"
+            >
+              <button
+                onClick={install}
+                aria-label={isIOS ? 'Add to Home Screen' : 'Install app'}
+                title={isIOS ? 'Add to Home Screen' : 'Install App'}
+                className="w-full flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-sm font-semibold bg-primary/10 text-primary hover:bg-primary/20 active:scale-95 transition-all border border-border/60"
+              >
+                <Download size={16} />
+                <span className="whitespace-nowrap">
+                  {isIOS ? 'Add to Home Screen' : 'Install RozNaama'}
+                </span>
+              </button>
+            </motion.div>
+          )}
+        </AnimatePresence>
 
         {/* Summary cards — tab aware */}
         <section aria-label="Summary" className="mb-6">
