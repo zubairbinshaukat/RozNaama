@@ -148,13 +148,34 @@ export const getDailyTotals = query({
       )
       .collect()
 
-    const byDay = new Map<string, number>()
+    const expenses = await ctx.db
+      .query('expenses')
+      .withIndex('by_userId_expenseDate', (q) =>
+        q.eq('userId', user._id)
+          .gte('expenseDate', args.startDate)
+          .lte('expenseDate', args.endDate)
+      )
+      .collect()
+
+    const salesByDay = new Map<string, number>()
     for (const s of sessions) {
       const day = new Date(s.sessionDate).toISOString().split('T')[0]
-      byDay.set(day, (byDay.get(day) ?? 0) + s.totalAmount)
+      salesByDay.set(day, (salesByDay.get(day) ?? 0) + s.totalAmount)
     }
 
-    return Array.from(byDay.entries()).map(([date, total]) => ({ date, total }))
+    const expensesByDay = new Map<string, number>()
+    for (const e of expenses) {
+      const day = new Date(e.expenseDate).toISOString().split('T')[0]
+      expensesByDay.set(day, (expensesByDay.get(day) ?? 0) + e.amount)
+    }
+
+    const allDays = new Set<string>([...salesByDay.keys(), ...expensesByDay.keys()])
+    return Array.from(allDays.values())
+      .sort((a, b) => a.localeCompare(b))
+      .map((date) => ({
+        date,
+        total: (salesByDay.get(date) ?? 0) - (expensesByDay.get(date) ?? 0),
+      }))
   },
 })
 
@@ -172,6 +193,7 @@ export const getStats = query({
     const user = await requireUser(ctx)
     if (!user) return {
       todayTotal: 0, todayCount: 0,
+      todayExpenseTotal: 0, todayExpenseCount: 0,
       weekTotal: 0,  weekCount: 0,
       monthTotal: 0, monthCount: 0,
       topCategoryName: null,
@@ -204,12 +226,49 @@ export const getStats = query({
       )
       .collect()
 
-    const todayTotal  = todaySessions.reduce((s, x) => s + x.totalAmount, 0)
-    const todayCount  = todaySessions.reduce((s, x) => s + x.itemCount, 0)
-    const weekTotal   = weekSessions.reduce((s, x) => s + x.totalAmount, 0)
-    const weekCount   = weekSessions.reduce((s, x) => s + x.itemCount, 0)
-    const monthTotal  = monthSessions.reduce((s, x) => s + x.totalAmount, 0)
-    const monthCount  = monthSessions.reduce((s, x) => s + x.itemCount, 0)
+    const todayExpenses = await ctx.db
+      .query('expenses')
+      .withIndex('by_userId_expenseDate', (q) =>
+        q.eq('userId', user._id)
+          .gte('expenseDate', args.todayStart)
+          .lte('expenseDate', args.todayEnd)
+      )
+      .collect()
+
+    const weekExpenses = await ctx.db
+      .query('expenses')
+      .withIndex('by_userId_expenseDate', (q) =>
+        q.eq('userId', user._id)
+          .gte('expenseDate', args.weekStart)
+          .lte('expenseDate', args.weekEnd)
+      )
+      .collect()
+
+    const monthExpenses = await ctx.db
+      .query('expenses')
+      .withIndex('by_userId_expenseDate', (q) =>
+        q.eq('userId', user._id)
+          .gte('expenseDate', args.monthStart)
+          .lte('expenseDate', args.monthEnd)
+      )
+      .collect()
+
+    const todaySalesTotal  = todaySessions.reduce((s, x) => s + x.totalAmount, 0)
+    const todayCount       = todaySessions.reduce((s, x) => s + x.itemCount, 0)
+    const todayExpenseTotal = todayExpenses.reduce((s, x) => s + x.amount, 0)
+    const todayExpenseCount = todayExpenses.length
+
+    const weekSalesTotal    = weekSessions.reduce((s, x) => s + x.totalAmount, 0)
+    const weekCount         = weekSessions.reduce((s, x) => s + x.itemCount, 0)
+    const weekExpenseTotal  = weekExpenses.reduce((s, x) => s + x.amount, 0)
+
+    const monthSalesTotal   = monthSessions.reduce((s, x) => s + x.totalAmount, 0)
+    const monthCount        = monthSessions.reduce((s, x) => s + x.itemCount, 0)
+    const monthExpenseTotal = monthExpenses.reduce((s, x) => s + x.amount, 0)
+
+    const todayTotal  = todaySalesTotal - todayExpenseTotal
+    const weekTotal   = weekSalesTotal - weekExpenseTotal
+    const monthTotal  = monthSalesTotal - monthExpenseTotal
 
     const catTotals = new Map<string, number>()
 
@@ -237,6 +296,16 @@ export const getStats = query({
       topCategoryName = cat?.name ?? null
     }
 
-    return { todayTotal, todayCount, weekTotal, weekCount, monthTotal, monthCount, topCategoryName }
+    return {
+      todayTotal,
+      todayCount,
+      todayExpenseTotal,
+      todayExpenseCount,
+      weekTotal,
+      weekCount,
+      monthTotal,
+      monthCount,
+      topCategoryName,
+    }
   },
 })

@@ -6,6 +6,7 @@ import { useMonthlyTotals, useMonthSessions } from '@/hooks/useSales'
 import { useCategories } from '@/hooks/useCategories'
 import { formatCurrency } from '@/lib/utils'
 import SalesList from './SalesList'
+import { useMonthExpenses } from '@/hooks/useExpenses'
 
 function EmptyState() {
   return (
@@ -13,7 +14,7 @@ function EmptyState() {
       <CalendarRange className="text-muted-foreground/40" size={48} strokeWidth={1.5} />
       <div>
         <p className="font-semibold text-foreground">No sales this month</p>
-        <p className="text-sm text-muted-foreground mt-1">Start recording sales to see your monthly trend.</p>
+        <p className="text-sm text-muted-foreground mt-1">Record sales or add expenses to see your monthly trend.</p>
       </div>
     </div>
   )
@@ -41,8 +42,9 @@ export default function MonthlyChart() {
   const totals     = useMonthlyTotals()
   const sessions   = useMonthSessions()
   const categories = useCategories()
+  const expenses   = useMonthExpenses()
 
-  if (totals === undefined) {
+  if (totals === undefined || sessions === undefined || categories === undefined || expenses === undefined) {
     return (
       <div className="flex flex-col gap-3 pt-2">
         <div className="skeleton h-60 rounded-xl" />
@@ -51,8 +53,8 @@ export default function MonthlyChart() {
     )
   }
 
-  const hasData = totals.some((t) => t.total > 0)
-  if (!hasData) return <EmptyState />
+  const hasAnyData = (sessions.length > 0) || (expenses.length > 0)
+  if (!hasAnyData) return <EmptyState />
 
   const data = totals
     .map((t) => ({ day: shortDate(t.date), rawDate: t.date, total: t.total }))
@@ -98,14 +100,14 @@ export default function MonthlyChart() {
       </div>
 
       {/* Detailed sales for the month */}
-      {sessions !== undefined && categories !== undefined && sessions.length > 0 && (
+      {sessions.length > 0 || expenses.length > 0 ? (
         <div>
           <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-3">
-            This Month's Sales
+            This Month (Sales - Expenses)
           </p>
-          <SalesList sessions={sessions} categories={categories} compact />
+          <SalesList sessions={sessions} expenses={expenses} categories={categories} compact />
         </div>
-      )}
+      ) : null}
     </div>
   )
 }

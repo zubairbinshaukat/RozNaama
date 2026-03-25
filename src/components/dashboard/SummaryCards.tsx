@@ -1,4 +1,4 @@
-import { Banknote, Hash, Star, TrendingUp, CalendarDays, CalendarRange, BarChart2 } from 'lucide-react'
+import { Banknote, Hash, Star, CalendarDays, CalendarRange, BarChart2, Receipt } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { cn, formatAmount } from '@/lib/utils'
 import type { DashboardStats } from '@/hooks/useSales'
@@ -28,35 +28,43 @@ interface SummaryCardProps {
   accent?:    string
   className?: string
   delay?:     number
+  onClick?:   () => void
 }
 
-function SummaryCard({ icon, label, value, subLabel, accent = 'bg-primary/10', className, delay = 0 }: SummaryCardProps) {
+function SummaryCard({ icon, label, value, subLabel, accent = 'bg-primary/10', className, delay = 0, onClick }: SummaryCardProps) {
+  const Comp = onClick ? motion.button : motion.div
   return (
-    <motion.div
+    <Comp
       initial={{ opacity: 0, y: 12 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.35, delay, ease: [0.22, 1, 0.36, 1] }}
       className={cn(
         'rounded-2xl border border-border bg-card p-5 flex flex-col gap-3',
         'hover:shadow-card-hover transition-all duration-200',
+        onClick
+          ? 'cursor-pointer active:scale-[0.97] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:ring-offset-2'
+          : undefined,
         className,
       )}
+      {...(onClick
+        ? { type: 'button', onClick, 'aria-label': `Add expense: ${label}` }
+        : {})}
     >
       <div className="flex items-start justify-between gap-3 min-w-0">
-        <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-widest min-w-0 break-words">
+        <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-widest min-w-0 wrap-break-word">
           {label}
         </span>
         <div className={cn('w-9 h-9 rounded-xl flex items-center justify-center shrink-0', accent)}>
           {icon}
         </div>
       </div>
-      <p className="text-[1.6rem] font-logo font-bold text-foreground tracking-tight leading-tight min-w-0 break-words">
+      <p className="text-[1.6rem] font-logo font-bold text-foreground tracking-tight leading-tight min-w-0 wrap-break-word">
         {value}
       </p>
       {subLabel && (
         <p className="text-[11px] text-muted-foreground">{subLabel}</p>
       )}
-    </motion.div>
+    </Comp>
   )
 }
 
@@ -65,9 +73,10 @@ function SummaryCard({ icon, label, value, subLabel, accent = 'bg-primary/10', c
 interface SummaryCardsProps {
   stats:     DashboardStats | undefined
   activeTab: 'daily' | 'weekly' | 'monthly'
+  onAddExpense?: () => void
 }
 
-export default function SummaryCards({ stats, activeTab }: SummaryCardsProps) {
+export default function SummaryCards({ stats, activeTab, onAddExpense }: SummaryCardsProps) {
   if (!stats) {
     return (
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
@@ -91,6 +100,14 @@ export default function SummaryCards({ stats, activeTab }: SummaryCardsProps) {
         accent:   'bg-primary/10',
       },
       {
+        icon:     <Receipt className="text-destructive" size={18} strokeWidth={1.5} />,
+        label:    'Expenses Today',
+        value:    formatAmount(stats.todayExpenseTotal),
+        subLabel: stats.todayExpenseCount === 0 ? 'Tap to add' : `${stats.todayExpenseCount} logged`,
+        accent:   'bg-destructive/10',
+        onClick:  onAddExpense,
+      },
+      {
         icon:     <Hash className="text-emerald-500" size={18} strokeWidth={1.5} />,
         label:    'Sales Today',
         value:    String(stats.todayCount),
@@ -104,18 +121,11 @@ export default function SummaryCards({ stats, activeTab }: SummaryCardsProps) {
         subLabel: 'highest today',
         accent:   'bg-amber-500/10',
       },
-      {
-        icon:     <TrendingUp className="text-violet-500" size={18} strokeWidth={1.5} />,
-        label:    'This Week',
-        value:    formatAmount(stats.weekTotal),
-        subLabel: `${stats.weekCount} sales`,
-        accent:   'bg-violet-500/10',
-      },
     ],
     weekly: [
       {
         icon:     <CalendarDays className="text-primary" size={18} strokeWidth={1.5} />,
-        label:    'Week Total',
+        label:    'Week Net Total',
         value:    formatAmount(stats.weekTotal),
         subLabel: `${stats.weekCount} sales this week`,
         accent:   'bg-primary/10',
@@ -136,7 +146,7 @@ export default function SummaryCards({ stats, activeTab }: SummaryCardsProps) {
       },
       {
         icon:     <Banknote className="text-violet-500" size={18} strokeWidth={1.5} />,
-        label:    "Today's Sales",
+        label:    'Today Net Total',
         value:    formatAmount(stats.todayTotal),
         subLabel: `${stats.todayCount} today`,
         accent:   'bg-violet-500/10',
@@ -145,7 +155,7 @@ export default function SummaryCards({ stats, activeTab }: SummaryCardsProps) {
     monthly: [
       {
         icon:     <CalendarRange className="text-primary" size={18} strokeWidth={1.5} />,
-        label:    'Month Total',
+        label:    'Month Net Total',
         value:    formatAmount(stats.monthTotal),
         subLabel: `${stats.monthCount} sales this month`,
         accent:   'bg-primary/10',

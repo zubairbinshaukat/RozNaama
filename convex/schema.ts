@@ -42,4 +42,13 @@ export default defineSchema({
     .index('by_userId_categoryId', ['userId', 'categoryId'])
     .index('by_sessionId',         ['sessionId']),
 
+  // Expenses reduce your profit (shown on dashboard and per-day list)
+  expenses: defineTable({
+    userId:      v.id('users'),
+    amount:      v.number(),        // In PKR, always > 0
+    note:        v.optional(v.string()),
+    expenseDate: v.number(),       // Unix ms — date of the expense
+    createdAt:   v.number(),
+  }).index('by_userId_expenseDate', ['userId', 'expenseDate']),
+
 })

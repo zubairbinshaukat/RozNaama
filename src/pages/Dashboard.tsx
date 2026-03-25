@@ -12,6 +12,7 @@ import MonthlyChart    from '@/components/dashboard/MonthlyChart'
 import FAB             from '@/components/shared/FAB'
 import AddCategoryModal      from '@/components/modals/AddCategoryModal'
 import AddSaleModal          from '@/components/modals/AddSaleModal'
+import AddExpenseModal      from '@/components/modals/AddExpenseModal'
 import ManageCategoriesModal from '@/components/modals/ManageCategoriesModal'
 import IOSInstallModal      from '@/components/modals/IOSInstallModal'
 import { useDashboardStats } from '@/hooks/useSales'
@@ -86,6 +87,7 @@ export default function Dashboard() {
   const [activeTab,              setActiveTab]              = useState<Tab>('daily')
   const [showCategoryModal,      setShowCategoryModal]      = useState(false)
   const [showSaleModal,          setShowSaleModal]          = useState(false)
+  const [showExpenseModal,      setShowExpenseModal]      = useState(false)
   const [showManageCategoriesModal, setShowManageCategoriesModal] = useState(false)
   const [showIOSInstallModal,   setShowIOSInstallModal]   = useState(false)
 
@@ -178,7 +180,7 @@ export default function Dashboard() {
 
         {/* Summary cards — tab aware */}
         <section aria-label="Summary" className="mb-6">
-          <SummaryCards stats={stats} activeTab={activeTab} />
+          <SummaryCards stats={stats} activeTab={activeTab} onAddExpense={() => setShowExpenseModal(true)} />
         </section>
 
         {/* Tab bar */}
@@ -239,6 +241,9 @@ export default function Dashboard() {
       )}
       {showSaleModal && (
         <AddSaleModal onClose={() => setShowSaleModal(false)} />
+      )}
+      {showExpenseModal && (
+        <AddExpenseModal onClose={() => setShowExpenseModal(false)} />
       )}
       {showManageCategoriesModal && (
         <ManageCategoriesModal onClose={() => setShowManageCategoriesModal(false)} />

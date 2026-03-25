@@ -1,7 +1,7 @@
 import { useState, useMemo } from 'react'
-import { ChevronDown, ShoppingBag, Calendar, Pencil, Trash2, Eye } from 'lucide-react'
+import { ChevronDown, ShoppingBag, Calendar, Pencil, Trash2, Eye, Receipt } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { cn, formatCurrency, formatDate } from '@/lib/utils'
+import { cn, formatCurrency, formatDate, formatTime } from '@/lib/utils'
 import { useDeleteSaleItem } from '@/hooks/useSales'
 import { useToast } from '@/components/shared/Toast'
 import EditSaleModal from '@/components/modals/EditSaleModal'
@@ -9,6 +9,7 @@ import SaleDetailModal from '@/components/modals/SaleDetailModal'
 import CategorySalesModal from '@/components/modals/CategorySalesModal'
 import ConfirmModal  from '@/components/modals/ConfirmModal'
 import type { SaleSession, SaleItem } from '@/hooks/useSales'
+import type { ExpenseEntry } from '@/hooks/useExpenses'
 import type { Category } from '@/hooks/useCategories'
 
 /* ─── helpers ─── */
@@ -41,12 +42,15 @@ function hexToGradient(hex: string): string {
 type DayGroup = {
   dateKey:     string
   dateLabel:   string
-  totalAmount: number
+  salesTotalAmount:    number
+  expenseTotalAmount:  number
+  netTotalAmount:      number
   itemCount:   number
   items:       SaleItem[]
+  expenses:    ExpenseEntry[]
 }
 
-function buildDayGroups(sessions: SaleSession[]): DayGroup[] {
+function buildDayGroups(sessions: SaleSession[], expenses: ExpenseEntry[]): DayGroup[] {
   const map = new Map<string, DayGroup>()
 
   for (const session of sessions) {
@@ -57,20 +61,47 @@ function buildDayGroups(sessions: SaleSession[]): DayGroup[] {
       map.set(key, {
         dateKey:     key,
         dateLabel:   formatDate(session.sessionDate),
-        totalAmount: 0,
+        salesTotalAmount: 0,
+        expenseTotalAmount: 0,
+        netTotalAmount: 0,
         itemCount:   0,
         items:       [],
+        expenses:    [],
       })
     }
 
     const group = map.get(key)!
-    group.totalAmount += session.totalAmount
+    group.salesTotalAmount += session.totalAmount
     group.itemCount   += session.itemCount
     group.items.push(...session.items)
   }
 
+  for (const expense of expenses) {
+    const d = new Date(expense.expenseDate)
+    const key = d.toISOString().split('T')[0]
+
+    if (!map.has(key)) {
+      map.set(key, {
+        dateKey:     key,
+        dateLabel:   formatDate(expense.expenseDate),
+        salesTotalAmount: 0,
+        expenseTotalAmount: 0,
+        netTotalAmount: 0,
+        itemCount:   0,
+        items:       [],
+        expenses:    [],
+      })
+    }
+
+    const group = map.get(key)!
+    group.expenseTotalAmount += expense.amount
+    group.expenses.push(expense)
+  }
+
   for (const group of map.values()) {
     group.items.sort((a, b) => a.createdAt - b.createdAt)
+    group.expenses.sort((a, b) => a.createdAt - b.createdAt)
+    group.netTotalAmount = group.salesTotalAmount - group.expenseTotalAmount
   }
 
   return Array.from(map.values()).sort((a, b) => b.dateKey.localeCompare(a.dateKey))
@@ -94,9 +125,9 @@ function EmptyState() {
         <ShoppingBag className="text-primary/40" size={32} strokeWidth={1.5} />
       </motion.div>
       <div className="space-y-2">
-        <p className="font-semibold text-foreground text-lg tracking-tight">No sales yet</p>
+        <p className="font-semibold text-foreground text-lg tracking-tight">No sales or expenses yet</p>
         <p className="text-sm text-muted-foreground leading-relaxed max-w-[240px]">
-          Tap the <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-primary text-primary-foreground text-xs font-bold align-middle">+</span> button to record your first sale
+          Tap the <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-primary text-primary-foreground text-xs font-bold align-middle">+</span> button to record your first sale, or add an expense from the dashboard
         </p>
       </div>
     </motion.div>
@@ -238,7 +269,7 @@ function SaleItemCard({
               className={cn(
                 'flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl text-xs font-medium',
                 'text-muted-foreground/70 transition-all duration-200',
-                'hover:bg-foreground/[0.04] hover:text-foreground',
+                'hover:bg-foreground/4 hover:text-foreground',
                 'active:scale-95 touch-manipulation',
               )}
             >
@@ -252,7 +283,7 @@ function SaleItemCard({
               className={cn(
                 'flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl text-xs font-medium',
                 'text-muted-foreground/70 transition-all duration-200',
-                'hover:bg-foreground/[0.04] hover:text-blue-400',
+                'hover:bg-foreground/4 hover:text-blue-400',
                 'active:scale-95 touch-manipulation',
               )}
             >
@@ -266,7 +297,7 @@ function SaleItemCard({
               className={cn(
                 'flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl text-xs font-medium',
                 'text-muted-foreground/70 transition-all duration-200',
-                'hover:bg-destructive/[0.06] hover:text-destructive',
+                'hover:bg-destructive/6 hover:text-destructive',
                 'active:scale-95 touch-manipulation',
               )}
             >
@@ -407,13 +438,25 @@ function DayCard({
               )}
             </div>
             <p className="text-xs text-muted-foreground mt-0.5">
-              {group.itemCount} sale{group.itemCount !== 1 ? 's' : ''}
+              {group.itemCount === 0
+                ? 'No sales'
+                : `${group.itemCount} sale${group.itemCount !== 1 ? 's' : ''}`}
             </p>
+            {group.expenseTotalAmount > 0 && (
+              <p className="text-xs text-destructive mt-0.5 font-medium">
+                {group.expenses.length} expense{group.expenses.length !== 1 ? 's' : ''}
+              </p>
+            )}
           </div>
 
           <div className="flex items-center gap-3 shrink-0">
-            <span className="text-[17px] font-bold text-foreground tabular-nums tracking-tight">
-              {formatCurrency(group.totalAmount)}
+            <span
+              className={cn(
+                'text-[17px] font-bold tabular-nums tracking-tight',
+                group.netTotalAmount < 0 ? 'text-destructive' : 'text-foreground',
+              )}
+            >
+              {formatCurrency(group.netTotalAmount)}
             </span>
             <motion.div
               animate={{ rotate: expanded ? 180 : 0 }}
@@ -434,7 +477,40 @@ function DayCard({
               transition={{ duration: 0.3, ease: [0.23, 1, 0.32, 1] }}
               className="overflow-hidden"
             >
-              <div className="px-3 pb-3 pt-1">
+              <div className="px-3 pb-3 pt-1 flex flex-col gap-3">
+                {group.expenses.length > 0 && (
+                  <div className="rounded-2xl border border-destructive/20 bg-destructive/5 p-3">
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="flex items-center gap-2 min-w-0">
+                        <Receipt size={16} className="text-destructive" strokeWidth={1.8} />
+                        <p className="text-sm font-semibold text-foreground">Expenses</p>
+                      </div>
+                      <p className="text-sm font-bold text-destructive tabular-nums shrink-0">
+                        {formatCurrency(group.expenseTotalAmount)}
+                      </p>
+                    </div>
+                    <div className="mt-2 space-y-2">
+                      {group.expenses.map((exp) => (
+                        <div
+                          key={exp._id}
+                          className="flex items-start justify-between gap-3 rounded-xl bg-card/60 border border-border/50 px-3 py-2"
+                        >
+                          <div className="min-w-0">
+                            <p className="text-xs font-semibold text-destructive/90 truncate">
+                              {exp.note?.trim() ? exp.note : 'Expense'}
+                            </p>
+                            <p className="text-[11px] text-muted-foreground mt-0.5">
+                              {formatTime(exp.createdAt)}
+                            </p>
+                          </div>
+                          <p className="text-sm font-bold text-destructive tabular-nums shrink-0">
+                            {formatCurrency(exp.amount)}
+                          </p>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
                 <SaleItemsGrid
                   items={group.items}
                   categories={categories}
@@ -483,16 +559,17 @@ function DayCard({
 
 interface SalesListProps {
   sessions:   SaleSession[]
+  expenses?:  ExpenseEntry[]
   categories: Category[]
   compact?:   boolean
 }
 
-export default function SalesList({ sessions, categories, compact = false }: SalesListProps) {
+export default function SalesList({ sessions, expenses = [], categories, compact = false }: SalesListProps) {
   const todayKey = useMemo(() => getTodayKey(), [])
 
-  if (sessions.length === 0) return <EmptyState />
+  if (sessions.length === 0 && expenses.length === 0) return <EmptyState />
 
-  const days = buildDayGroups(sessions)
+  const days = buildDayGroups(sessions, expenses)
 
   return (
     <div className={cn('flex flex-col gap-3', !compact && 'animate-[fade-in_0.3s_ease-out]')}>

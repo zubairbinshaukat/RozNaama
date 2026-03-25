@@ -6,6 +6,7 @@ import { useWeeklyTotals, useWeekSessions } from '@/hooks/useSales'
 import { useCategories } from '@/hooks/useCategories'
 import { formatCurrency, startOfWeek } from '@/lib/utils'
 import SalesList from './SalesList'
+import { useWeekExpenses } from '@/hooks/useExpenses'
 
 const DAY_ABBR = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
 
@@ -51,8 +52,9 @@ export default function WeeklyChart() {
   const totals     = useWeeklyTotals()
   const sessions   = useWeekSessions()
   const categories = useCategories()
+  const expenses   = useWeekExpenses()
 
-  if (totals === undefined) {
+  if (totals === undefined || sessions === undefined || categories === undefined || expenses === undefined) {
     return (
       <div className="flex flex-col gap-3 pt-2">
         <div className="skeleton h-60 rounded-xl" />
@@ -62,8 +64,8 @@ export default function WeeklyChart() {
   }
 
   const data    = buildWeekFrame(totals)
-  const hasData = data.some((d) => d.total > 0)
-  if (!hasData) return <EmptyState />
+  const hasAnyData = (sessions.length > 0) || (expenses.length > 0)
+  if (!hasAnyData) return <EmptyState />
 
   return (
     <div className="flex flex-col gap-6 pt-2">
@@ -92,14 +94,14 @@ export default function WeeklyChart() {
       </div>
 
       {/* Detailed sales for the week */}
-      {sessions !== undefined && categories !== undefined && sessions.length > 0 && (
+      {sessions.length > 0 || expenses.length > 0 ? (
         <div>
           <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-3">
-            This Week's Sales
+            This Week (Sales - Expenses)
           </p>
-          <SalesList sessions={sessions} categories={categories} compact />
+          <SalesList sessions={sessions} expenses={expenses} categories={categories} compact />
         </div>
-      )}
+      ) : null}
     </div>
   )
 }
