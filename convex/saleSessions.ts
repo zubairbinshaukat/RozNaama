@@ -193,6 +193,7 @@ export const getStats = query({
     const user = await requireUser(ctx)
     if (!user) return {
       todayTotal: 0, todayCount: 0,
+      todaySalesTotal: 0, todayNetTotal: 0,
       todayExpenseTotal: 0, todayExpenseCount: 0,
       weekTotal: 0,  weekCount: 0,
       monthTotal: 0, monthCount: 0,
@@ -266,7 +267,8 @@ export const getStats = query({
     const monthCount        = monthSessions.reduce((s, x) => s + x.itemCount, 0)
     const monthExpenseTotal = monthExpenses.reduce((s, x) => s + x.amount, 0)
 
-    const todayTotal  = todaySalesTotal - todayExpenseTotal
+    const todayNetTotal = todaySalesTotal - todayExpenseTotal
+    const todayTotal    = todaySalesTotal
     const weekTotal   = weekSalesTotal - weekExpenseTotal
     const monthTotal  = monthSalesTotal - monthExpenseTotal
 
@@ -298,6 +300,8 @@ export const getStats = query({
 
     return {
       todayTotal,
+      todaySalesTotal,
+      todayNetTotal,
       todayCount,
       todayExpenseTotal,
       todayExpenseCount,

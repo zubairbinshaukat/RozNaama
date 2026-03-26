@@ -58,3 +58,39 @@ export const getForRange = query({
   },
 })
 
+/** Update one expense entry */
+export const updateItem = mutation({
+  args: {
+    expenseId: v.id('expenses'),
+    amount:    v.number(),
+    note:      v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const user = await requireUser(ctx)
+    if (!user) throw new ConvexError('User not found — please sign in again')
+    if (args.amount <= 0) throw new ConvexError('Expense amount must be greater than 0')
+
+    const expense = await ctx.db.get(args.expenseId)
+    if (!expense || expense.userId !== user._id) throw new ConvexError('Expense not found')
+
+    await ctx.db.patch(args.expenseId, {
+      amount: args.amount,
+      note:   args.note?.trim() || undefined,
+    })
+  },
+})
+
+/** Delete one expense entry */
+export const removeItem = mutation({
+  args: { expenseId: v.id('expenses') },
+  handler: async (ctx, args) => {
+    const user = await requireUser(ctx)
+    if (!user) throw new ConvexError('User not found — please sign in again')
+
+    const expense = await ctx.db.get(args.expenseId)
+    if (!expense || expense.userId !== user._id) throw new ConvexError('Expense not found')
+
+    await ctx.db.delete(args.expenseId)
+  },
+})
+

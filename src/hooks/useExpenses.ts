@@ -33,3 +33,13 @@ export function useRecordExpense() {
   return useMutation(api.expenses.record)
 }
 
+/** Update one expense entry */
+export function useUpdateExpenseItem() {
+  return useMutation(api.expenses.updateItem)
+}
+
+/** Delete one expense entry */
+export function useDeleteExpenseItem() {
+  return useMutation(api.expenses.removeItem)
+}
+

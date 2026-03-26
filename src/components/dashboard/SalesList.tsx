@@ -3,8 +3,10 @@ import { ChevronDown, ShoppingBag, Calendar, Pencil, Trash2, Eye, Receipt } from
 import { motion, AnimatePresence } from 'framer-motion'
 import { cn, formatCurrency, formatDate, formatTime } from '@/lib/utils'
 import { useDeleteSaleItem } from '@/hooks/useSales'
+import { useDeleteExpenseItem } from '@/hooks/useExpenses'
 import { useToast } from '@/components/shared/Toast'
 import EditSaleModal from '@/components/modals/EditSaleModal'
+import EditExpenseModal from '@/components/modals/EditExpenseModal'
 import SaleDetailModal from '@/components/modals/SaleDetailModal'
 import CategorySalesModal from '@/components/modals/CategorySalesModal'
 import ConfirmModal  from '@/components/modals/ConfirmModal'
@@ -14,8 +16,16 @@ import type { Category } from '@/hooks/useCategories'
 
 /* ─── helpers ─── */
 
+function toLocalDateKey(timestamp: number): string {
+  const d = new Date(timestamp)
+  const y = d.getFullYear()
+  const m = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  return `${y}-${m}-${day}`
+}
+
 function getTodayKey(): string {
-  return new Date().toISOString().split('T')[0]
+  return toLocalDateKey(Date.now())
 }
 
 function hexToRgb(hex: string): { r: number; g: number; b: number } {
@@ -54,8 +64,7 @@ function buildDayGroups(sessions: SaleSession[], expenses: ExpenseEntry[]): DayG
   const map = new Map<string, DayGroup>()
 
   for (const session of sessions) {
-    const d   = new Date(session.sessionDate)
-    const key = d.toISOString().split('T')[0]
+    const key = toLocalDateKey(session.sessionDate)
 
     if (!map.has(key)) {
       map.set(key, {
@@ -77,8 +86,7 @@ function buildDayGroups(sessions: SaleSession[], expenses: ExpenseEntry[]): DayG
   }
 
   for (const expense of expenses) {
-    const d = new Date(expense.expenseDate)
-    const key = d.toISOString().split('T')[0]
+    const key = toLocalDateKey(expense.expenseDate)
 
     if (!map.has(key)) {
       map.set(key, {
@@ -376,9 +384,12 @@ function DayCard({
   const [detailItem,    setDetailItem]    = useState<SaleItem | null>(null)
   const [categoryModal, setCategoryModal] = useState<Category | null>(null)
   const [deletingItem,  setDeletingItem]  = useState<SaleItem | null>(null)
+  const [editingExpense, setEditingExpense] = useState<ExpenseEntry | null>(null)
+  const [deletingExpense, setDeletingExpense] = useState<ExpenseEntry | null>(null)
   const [deleting,      setDeleting]      = useState(false)
 
   const deleteItem = useDeleteSaleItem()
+  const deleteExpense = useDeleteExpenseItem()
   const { showToast } = useToast()
 
   const handleDelete = async () => {
@@ -390,6 +401,20 @@ function DayCard({
       setDeletingItem(null)
     } catch {
       showToast('Could not delete sale. Try again.', 'error')
+    } finally {
+      setDeleting(false)
+    }
+  }
+
+  const handleDeleteExpense = async () => {
+    if (!deletingExpense) return
+    setDeleting(true)
+    try {
+      await deleteExpense({ expenseId: deletingExpense._id })
+      showToast('Expense deleted', 'success')
+      setDeletingExpense(null)
+    } catch {
+      showToast('Could not delete expense. Try again.', 'error')
     } finally {
       setDeleting(false)
     }
@@ -442,11 +467,9 @@ function DayCard({
                 ? 'No sales'
                 : `${group.itemCount} sale${group.itemCount !== 1 ? 's' : ''}`}
             </p>
-            {group.expenseTotalAmount > 0 && (
-              <p className="text-xs text-destructive mt-0.5 font-medium">
-                {group.expenses.length} expense{group.expenses.length !== 1 ? 's' : ''}
-              </p>
-            )}
+            <p className="text-[11px] text-muted-foreground mt-0.5">
+              {formatCurrency(group.salesTotalAmount)} - {formatCurrency(group.expenseTotalAmount)}
+            </p>
           </div>
 
           <div className="flex items-center gap-3 shrink-0">
@@ -493,19 +516,51 @@ function DayCard({
                       {group.expenses.map((exp) => (
                         <div
                           key={exp._id}
-                          className="flex items-start justify-between gap-3 rounded-xl bg-card/60 border border-border/50 px-3 py-2"
+                          className="rounded-xl bg-card/60 border border-border/50 px-3 py-2"
                         >
-                          <div className="min-w-0">
-                            <p className="text-xs font-semibold text-destructive/90 truncate">
-                              {exp.note?.trim() ? exp.note : 'Expense'}
-                            </p>
-                            <p className="text-[11px] text-muted-foreground mt-0.5">
-                              {formatTime(exp.createdAt)}
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="min-w-0">
+                              <p className="text-xs font-semibold text-destructive/90 truncate">
+                                {exp.note?.trim() ? exp.note : 'Expense'}
+                              </p>
+                              <p className="text-[11px] text-muted-foreground mt-0.5">
+                                {formatTime(exp.createdAt)}
+                              </p>
+                            </div>
+                            <p className="text-sm font-bold text-destructive tabular-nums shrink-0">
+                              {formatCurrency(exp.amount)}
                             </p>
                           </div>
-                          <p className="text-sm font-bold text-destructive tabular-nums shrink-0">
-                            {formatCurrency(exp.amount)}
-                          </p>
+                          <div className="mt-2 pt-2 border-t border-border/50 flex items-center gap-1">
+                            <button
+                              type="button"
+                              onClick={() => setEditingExpense(exp)}
+                              aria-label="Edit expense"
+                              className={cn(
+                                'flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl text-xs font-medium',
+                                'text-muted-foreground/70 transition-all duration-200',
+                                'hover:bg-foreground/4 hover:text-blue-400',
+                                'active:scale-95 touch-manipulation',
+                              )}
+                            >
+                              <Pencil size={13} strokeWidth={2} />
+                              <span className="hidden sm:inline">Edit</span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setDeletingExpense(exp)}
+                              aria-label="Delete expense"
+                              className={cn(
+                                'flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl text-xs font-medium',
+                                'text-muted-foreground/70 transition-all duration-200',
+                                'hover:bg-destructive/6 hover:text-destructive',
+                                'active:scale-95 touch-manipulation',
+                              )}
+                            >
+                              <Trash2 size={13} strokeWidth={2} />
+                              <span className="hidden sm:inline">Delete</span>
+                            </button>
+                          </div>
                         </div>
                       ))}
                     </div>
@@ -540,6 +595,9 @@ function DayCard({
       {editingItem && (
         <EditSaleModal item={editingItem} categories={categories} onClose={() => setEditingItem(null)} />
       )}
+      {editingExpense && (
+        <EditExpenseModal expense={editingExpense} onClose={() => setEditingExpense(null)} />
+      )}
       {deletingItem && (
         <ConfirmModal
           title="Delete Sale"
@@ -549,6 +607,17 @@ function DayCard({
           loading={deleting}
           onConfirm={handleDelete}
           onClose={() => setDeletingItem(null)}
+        />
+      )}
+      {deletingExpense && (
+        <ConfirmModal
+          title="Delete Expense"
+          message={`Delete "${deletingExpense.note?.trim() || 'Expense'}" (${formatCurrency(deletingExpense.amount)})?`}
+          confirmLabel="Delete"
+          destructive
+          loading={deleting}
+          onConfirm={handleDeleteExpense}
+          onClose={() => setDeletingExpense(null)}
         />
       )}
     </>

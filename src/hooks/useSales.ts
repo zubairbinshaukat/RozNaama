@@ -36,6 +36,8 @@ export type DailyTotal = {
 
 export type DashboardStats = {
   todayTotal:      number
+  todaySalesTotal: number
+  todayNetTotal:   number
   todayCount:      number
   todayExpenseTotal: number
   todayExpenseCount: number

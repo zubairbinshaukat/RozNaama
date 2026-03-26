@@ -42,7 +42,7 @@ function SummaryCard({ icon, label, value, subLabel, accent = 'bg-primary/10', c
         'rounded-2xl border border-border bg-card p-5 flex flex-col gap-3',
         'hover:shadow-card-hover transition-all duration-200',
         onClick
-          ? 'cursor-pointer active:scale-[0.97] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:ring-offset-2'
+          ? 'cursor-pointer text-left active:scale-[0.97] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:ring-offset-2'
           : undefined,
         className,
       )}
@@ -95,15 +95,17 @@ export default function SummaryCards({ stats, activeTab, onAddExpense }: Summary
       {
         icon:     <Banknote className="text-primary" size={18} strokeWidth={1.5} />,
         label:    "Today's Total",
-        value:    formatAmount(stats.todayTotal),
+        value:    formatAmount(stats.todaySalesTotal),
         subLabel: `${stats.todayCount} sale${stats.todayCount !== 1 ? 's' : ''}`,
         accent:   'bg-primary/10',
       },
       {
         icon:     <Receipt className="text-destructive" size={18} strokeWidth={1.5} />,
-        label:    'Expenses Today',
-        value:    formatAmount(stats.todayExpenseTotal),
-        subLabel: stats.todayExpenseCount === 0 ? 'Tap to add' : `${stats.todayExpenseCount} logged`,
+        label:    'After Expense',
+        value:    formatAmount(stats.todayNetTotal),
+        subLabel: stats.todayExpenseCount === 0
+          ? `${formatAmount(stats.todaySalesTotal)} - 0 (tap to add)`
+          : `${formatAmount(stats.todaySalesTotal)} - ${formatAmount(stats.todayExpenseTotal)}`,
         accent:   'bg-destructive/10',
         onClick:  onAddExpense,
       },
@@ -147,7 +149,7 @@ export default function SummaryCards({ stats, activeTab, onAddExpense }: Summary
       {
         icon:     <Banknote className="text-violet-500" size={18} strokeWidth={1.5} />,
         label:    'Today Net Total',
-        value:    formatAmount(stats.todayTotal),
+        value:    formatAmount(stats.todayNetTotal),
         subLabel: `${stats.todayCount} today`,
         accent:   'bg-violet-500/10',
       },
