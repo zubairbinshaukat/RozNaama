@@ -1,6 +1,7 @@
 import { ConvexError, v } from 'convex/values'
 import { mutation, query, type MutationCtx, type QueryCtx } from './_generated/server'
 import type { Id } from './_generated/dataModel'
+
 async function requireUser(ctx: QueryCtx | MutationCtx) {
   const identity = await ctx.auth.getUserIdentity()
   if (!identity) throw new ConvexError('Unauthorized')
@@ -83,6 +84,7 @@ export const updateItem = mutation({
     amount:      v.number(),
     categoryId:  v.optional(v.id('categories')),
     note:        v.optional(v.string()),
+    saleDate:    v.optional(v.number()),
   },
   handler: async (ctx, args) => {
     const user = await requireUser(ctx)
@@ -90,6 +92,59 @@ export const updateItem = mutation({
 
     const sale = await ctx.db.get(args.saleId)
     if (!sale || sale.userId !== user._id) throw new ConvexError('Sale not found')
+
+    const dateChanged =
+      args.saleDate !== undefined && args.saleDate !== sale.saleDate
+
+    if (dateChanged) {
+      const newDate = args.saleDate!
+      const oldSession = await ctx.db.get(sale.sessionId)
+      if (oldSession) {
+        const newCount = oldSession.itemCount - 1
+        if (newCount <= 0) {
+          await ctx.db.delete(sale.sessionId)
+        } else {
+          await ctx.db.patch(sale.sessionId, {
+            totalAmount: Math.max(0, oldSession.totalAmount - sale.amount),
+            itemCount:   newCount,
+          })
+        }
+      }
+
+      const targetSession = await ctx.db
+        .query('saleSessions')
+        .withIndex('by_userId_sessionDate', (q) =>
+          q.eq('userId', user._id).eq('sessionDate', newDate),
+        )
+        .first()
+
+      let newSessionId: Id<'saleSessions'>
+      if (targetSession) {
+        newSessionId = targetSession._id
+        await ctx.db.patch(newSessionId, {
+          totalAmount: targetSession.totalAmount + args.amount,
+          itemCount:   targetSession.itemCount + 1,
+        })
+      } else {
+        newSessionId = await ctx.db.insert('saleSessions', {
+          userId:      user._id,
+          totalAmount: args.amount,
+          itemCount:   1,
+          sessionDate: newDate,
+          createdAt:   Date.now(),
+        })
+      }
+
+      await ctx.db.patch(args.saleId, {
+        productName: args.productName.trim(),
+        amount:      args.amount,
+        categoryId:  args.categoryId,
+        note:        args.note,
+        sessionId:   newSessionId,
+        saleDate:    newDate,
+      })
+      return
+    }
 
     const diff = args.amount - sale.amount
 

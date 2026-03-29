@@ -4,7 +4,7 @@ import {
 import { CalendarDays } from 'lucide-react'
 import { useWeeklyTotals, useWeekSessions } from '@/hooks/useSales'
 import { useCategories } from '@/hooks/useCategories'
-import { formatCurrency, startOfWeek } from '@/lib/utils'
+import { formatCurrency, startOfWeek, toLocalDateKey } from '@/lib/utils'
 import SalesList from './SalesList'
 import { useWeekExpenses } from '@/hooks/useExpenses'
 
@@ -17,7 +17,7 @@ function buildWeekFrame(totals: { date: string; total: number }[]): { day: strin
   return DAY_ABBR.map((day, i) => {
     const d = new Date(monday)
     d.setDate(monday.getDate() + i)
-    const key = d.toISOString().split('T')[0]
+    const key = toLocalDateKey(d.getTime())
     return { day, total: map.get(key) ?? 0 }
   })
 }

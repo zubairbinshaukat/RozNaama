@@ -1,7 +1,13 @@
 import { useState, useEffect, useRef, useMemo } from 'react'
-import { X, Check, Loader2, AlertCircle } from 'lucide-react'
+import { X, Check, Loader2, AlertCircle, Calendar } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { cn, formatCurrency } from '@/lib/utils'
+import {
+  cn,
+  formatCurrency,
+  startOfDay,
+  toDateInputValue,
+  parseDateInputToStartOfDay,
+} from '@/lib/utils'
 import { useUpdateSaleItem } from '@/hooks/useSales'
 import { useToast } from '@/components/shared/Toast'
 import CategorySelect from '@/components/shared/CategorySelect'
@@ -21,13 +27,15 @@ export default function EditSaleModal({ item, categories, onClose }: EditSaleMod
   const [amount,      setAmount]      = useState(String(item.amount))
   const [categoryId,  setCategoryId]  = useState<string>(item.categoryId ?? '')
   const [note,        setNote]        = useState(item.note ?? '')
+  const [saleDateMs, setSaleDateMs]  = useState(() => startOfDay(new Date(item.saleDate)))
   const [saving,      setSaving]      = useState(false)
   const [errors,      setErrors]      = useState<{ productName?: string; amount?: string }>({})
 
   const updateItem  = useUpdateSaleItem()
   const { showToast } = useToast()
   const keyboardInset = useVisualViewportBottomInset()
-  const nameRef     = useRef<HTMLInputElement>(null)
+  const nameRef          = useRef<HTMLInputElement>(null)
+  const saleDateInputRef = useRef<HTMLInputElement>(null)
 
   const initialSnapshot = useMemo(
     () => ({
@@ -35,6 +43,7 @@ export default function EditSaleModal({ item, categories, onClose }: EditSaleMod
       amount:      item.amount,
       categoryId:  item.categoryId ?? '',
       note:        (item.note ?? '').trim(),
+      saleDateMs:  startOfDay(new Date(item.saleDate)),
     }),
     [item],
   )
@@ -66,7 +75,8 @@ export default function EditSaleModal({ item, categories, onClose }: EditSaleMod
       productName.trim() === initialSnapshot.productName &&
       amt === initialSnapshot.amount &&
       categoryId === initialSnapshot.categoryId &&
-      nextNote === initialSnapshot.note
+      nextNote === initialSnapshot.note &&
+      saleDateMs === initialSnapshot.saleDateMs
     ) {
       showToast('No fields were updated.', 'info')
       return
@@ -80,6 +90,8 @@ export default function EditSaleModal({ item, categories, onClose }: EditSaleMod
         amount:      parseFloat(amount),
         categoryId:  categoryId ? (categoryId as Id<'categories'>) : undefined,
         note:        note.trim() || undefined,
+        saleDate:
+          saleDateMs !== initialSnapshot.saleDateMs ? saleDateMs : undefined,
       })
       showToast('Sale updated!', 'success')
       onClose()
@@ -179,30 +191,70 @@ export default function EditSaleModal({ item, categories, onClose }: EditSaleMod
             )}
           </div>
 
-          {/* Category + Note */}
-          <div className="grid grid-cols-2 gap-3">
-            <div className="flex flex-col gap-1.5">
-              <span id="edit-category-label" className="text-sm font-medium text-foreground">Category</span>
-              <CategorySelect
-                categories={categories}
-                value={categoryId}
-                onChange={setCategoryId}
-                aria-labelledby="edit-category-label"
-                triggerClassName="h-10 min-h-10"
-              />
-            </div>
-            <div className="flex flex-col gap-1.5">
-              <label htmlFor="edit-note" className="text-sm font-medium text-foreground">Note</label>
+          {/* Category */}
+          <div className="flex flex-col gap-1.5">
+            <span id="edit-category-label" className="text-sm font-medium text-foreground">Category</span>
+            <CategorySelect
+              categories={categories}
+              value={categoryId}
+              onChange={setCategoryId}
+              aria-labelledby="edit-category-label"
+              triggerClassName="h-11 min-h-11"
+            />
+          </div>
+
+          {/* Sale date (below category — full width for mobile) */}
+          <div className="flex flex-col gap-1.5">
+            <span className="text-sm font-medium text-foreground">Sale date</span>
+            <div className="relative flex items-center">
               <input
-                id="edit-note"
-                type="text"
-                value={note}
-                onChange={(e) => setNote(e.target.value)}
-                placeholder="Optional"
-                maxLength={100}
-                className="h-10 px-3 rounded-lg border bg-background text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:border-transparent transition-shadow"
+                ref={saleDateInputRef}
+                id="edit-sale-date"
+                type="date"
+                value={toDateInputValue(saleDateMs)}
+                onChange={(e) => setSaleDateMs(parseDateInputToStartOfDay(e.target.value))}
+                disabled={saving}
+                aria-label="Sale date"
+                className={cn(
+                  'w-full h-11 pl-3 pr-11 rounded-lg border bg-background text-sm text-foreground',
+                  'focus:outline-none focus:ring-2 focus:ring-ring focus:border-transparent transition-shadow',
+                  'disabled:opacity-50 appearance-none',
+                  '[&::-webkit-calendar-picker-indicator]:hidden',
+                )}
               />
+              <button
+                type="button"
+                disabled={saving}
+                aria-label="Open calendar"
+                onClick={() => {
+                  const el = saleDateInputRef.current
+                  if (!el) return
+                  if (typeof el.showPicker === 'function') void el.showPicker()
+                  else el.focus()
+                }}
+                className={cn(
+                  'absolute right-1.5 top-1/2 -translate-y-1/2 p-1.5 rounded-lg',
+                  'text-muted-foreground hover:text-foreground hover:bg-muted/60',
+                  'active:scale-[0.97] transition-all disabled:opacity-40',
+                )}
+              >
+                <Calendar size={18} strokeWidth={1.5} />
+              </button>
             </div>
+          </div>
+
+          {/* Note — own row, full width */}
+          <div className="flex flex-col gap-1.5">
+            <label htmlFor="edit-note" className="text-sm font-medium text-foreground">Note</label>
+            <input
+              id="edit-note"
+              type="text"
+              value={note}
+              onChange={(e) => setNote(e.target.value)}
+              placeholder="Optional"
+              maxLength={100}
+              className="w-full h-11 px-3 rounded-lg border bg-background text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:border-transparent transition-shadow"
+            />
           </div>
 
           {/* Total preview */}

@@ -1,4 +1,4 @@
-import { formatDate } from '@/lib/utils'
+import { formatDate, toLocalDateKey } from '@/lib/utils'
 import type { SaleItem } from '@/hooks/useSales'
 
 export type SaleDayGroup = {
@@ -12,7 +12,7 @@ export function groupSaleItemsByDay(items: SaleItem[]): SaleDayGroup[] {
   const map = new Map<string, SaleItem[]>()
 
   for (const item of items) {
-    const key = new Date(item.saleDate).toISOString().split('T')[0]
+    const key = toLocalDateKey(item.saleDate)
     if (!map.has(key)) map.set(key, [])
     map.get(key)!.push(item)
   }

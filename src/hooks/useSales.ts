@@ -4,6 +4,7 @@ import {
   startOfDay, endOfDay,
   startOfWeek, endOfWeek,
   startOfMonth, endOfMonth,
+  getClientTimeZone,
 } from '@/lib/utils'
 import type { Id } from '../../convex/_generated/dataModel'
 
@@ -95,6 +96,7 @@ export function useWeeklyTotals(): DailyTotal[] | undefined {
   return useQuery(api.saleSessions.getDailyTotals, {
     startDate: startOfWeek(),
     endDate:   endOfWeek(),
+    timeZone:  getClientTimeZone(),
   }) as DailyTotal[] | undefined
 }
 
@@ -103,6 +105,7 @@ export function useMonthlyTotals(): DailyTotal[] | undefined {
   return useQuery(api.saleSessions.getDailyTotals, {
     startDate: startOfMonth(),
     endDate:   endOfMonth(),
+    timeZone:  getClientTimeZone(),
   }) as DailyTotal[] | undefined
 }
 

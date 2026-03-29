@@ -1,8 +1,14 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
-import { X, Plus, Check, Loader2, AlertCircle, ShoppingBag } from 'lucide-react'
+import { X, Plus, Check, Loader2, AlertCircle, ShoppingBag, Calendar } from 'lucide-react'
 import { motion } from 'framer-motion'
 import { Button } from '@/components/ui/button'
-import { cn, formatCurrency } from '@/lib/utils'
+import {
+  cn,
+  formatCurrency,
+  startOfDay,
+  toDateInputValue,
+  parseDateInputToStartOfDay,
+} from '@/lib/utils'
 import { useRecordSales } from '@/hooks/useSales'
 import { useCategories } from '@/hooks/useCategories'
 import { useToast } from '@/components/shared/Toast'
@@ -45,6 +51,7 @@ export default function AddSaleModal({ onClose }: AddSaleModalProps) {
   const [errors,   setErrors]   = useState<Record<string, RowErrors>>({})
   const [saving,   setSaving]   = useState(false)
   const [topError, setTopError] = useState<string | null>(null)
+  const [saleDateMs, setSaleDateMs] = useState(() => startOfDay())
 
   const recordSales = useRecordSales()
   const categories  = useCategories()
@@ -52,6 +59,7 @@ export default function AddSaleModal({ onClose }: AddSaleModalProps) {
   const keyboardInset = useVisualViewportBottomInset()
   const firstInputRef = useRef<HTMLInputElement>(null)
   const scrollContainerRef = useRef<HTMLDivElement>(null)
+  const saleDateInputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => { firstInputRef.current?.focus() }, [])
 
@@ -137,7 +145,7 @@ export default function AddSaleModal({ onClose }: AddSaleModalProps) {
         note:        r.note.trim() || undefined,
       }))
 
-      const result = await recordSales({ items, sessionDate: Date.now() }) as { itemCount: number; totalAmount: number }
+      const result = await recordSales({ items, sessionDate: saleDateMs }) as { itemCount: number; totalAmount: number }
       const msg = `${result.itemCount} sale${result.itemCount !== 1 ? 's' : ''} recorded! Total: ${formatCurrency(result.totalAmount)}`
       showToast(msg, 'success')
       onClose()
@@ -216,6 +224,47 @@ export default function AddSaleModal({ onClose }: AddSaleModalProps) {
           <form onSubmit={handleSubmit} className="flex flex-col flex-1 min-h-0">
             {/* Scrollable rows */}
             <div ref={scrollContainerRef} className="overflow-y-auto px-4 py-4 flex flex-col gap-3 flex-1 overscroll-contain">
+              {/* Sale date (applies to all line items) */}
+              <div className="flex items-center gap-2 px-1">
+                <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider shrink-0">
+                  Sale date
+                </span>
+                <div className="relative flex-1 min-w-0 flex items-center">
+                  <input
+                    ref={saleDateInputRef}
+                    type="date"
+                    value={toDateInputValue(saleDateMs)}
+                    onChange={(e) => setSaleDateMs(parseDateInputToStartOfDay(e.target.value))}
+                    disabled={saving}
+                    aria-label="Sale date"
+                    className={cn(
+                      'w-full h-10 pl-3 pr-11 rounded-xl border bg-card text-sm font-medium text-foreground',
+                      'focus:outline-none focus:ring-2 focus:ring-ring/50 focus:border-transparent transition-all',
+                      'disabled:opacity-50 appearance-none',
+                      '[&::-webkit-calendar-picker-indicator]:hidden',
+                    )}
+                  />
+                  <button
+                    type="button"
+                    disabled={saving}
+                    aria-label="Open calendar"
+                    onClick={() => {
+                      const el = saleDateInputRef.current
+                      if (!el) return
+                      if (typeof el.showPicker === 'function') void el.showPicker()
+                      else el.focus()
+                    }}
+                    className={cn(
+                      'absolute right-1.5 top-1/2 -translate-y-1/2 p-1.5 rounded-lg',
+                      'text-muted-foreground hover:text-foreground hover:bg-muted/60',
+                      'active:scale-[0.97] transition-all disabled:opacity-40',
+                    )}
+                  >
+                    <Calendar size={18} strokeWidth={1.8} />
+                  </button>
+                </div>
+              </div>
+
               {/* Top-level error */}
               {topError && (
                 <motion.div

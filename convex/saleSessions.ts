@@ -2,6 +2,15 @@ import { ConvexError, v } from 'convex/values'
 import { mutation, query, type MutationCtx, type QueryCtx } from './_generated/server'
 import type { Id } from './_generated/dataModel'
 
+/** YYYY-MM-DD in the given IANA zone (matches browser local keys when zones align). */
+function dateKeyInTimeZone(ms: number, timeZone: string): string {
+  try {
+    return new Date(ms).toLocaleDateString('en-CA', { timeZone })
+  } catch {
+    return new Date(ms).toISOString().split('T')[0]!
+  }
+}
+
 /**
  * Resolve the current user from Clerk identity.
  * Returns null (instead of throwing) when user not yet in DB —
@@ -134,10 +143,13 @@ export const getDailyTotals = query({
   args: {
     startDate: v.number(),
     endDate:   v.number(),
+    timeZone:  v.string(),
   },
   handler: async (ctx, args) => {
     const user = await requireUser(ctx)
     if (!user) return []
+
+    const tz = args.timeZone.trim() || 'UTC'
 
     const sessions = await ctx.db
       .query('saleSessions')
@@ -159,13 +171,13 @@ export const getDailyTotals = query({
 
     const salesByDay = new Map<string, number>()
     for (const s of sessions) {
-      const day = new Date(s.sessionDate).toISOString().split('T')[0]
+      const day = dateKeyInTimeZone(s.sessionDate, tz)
       salesByDay.set(day, (salesByDay.get(day) ?? 0) + s.totalAmount)
     }
 
     const expensesByDay = new Map<string, number>()
     for (const e of expenses) {
-      const day = new Date(e.expenseDate).toISOString().split('T')[0]
+      const day = dateKeyInTimeZone(e.expenseDate, tz)
       expensesByDay.set(day, (expensesByDay.get(day) ?? 0) + e.amount)
     }
 

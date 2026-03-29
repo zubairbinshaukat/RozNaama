@@ -1,7 +1,7 @@
 import { useState, useMemo } from 'react'
 import { ChevronDown, ShoppingBag, Calendar, Pencil, Trash2, Eye, Receipt } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { cn, formatCurrency, formatDate, formatTime } from '@/lib/utils'
+import { cn, formatCurrency, formatDate, formatTime, toLocalDateKey } from '@/lib/utils'
 import { useDeleteSaleItem } from '@/hooks/useSales'
 import { useDeleteExpenseItem } from '@/hooks/useExpenses'
 import { useToast } from '@/components/shared/Toast'
@@ -15,14 +15,6 @@ import type { ExpenseEntry } from '@/hooks/useExpenses'
 import type { Category } from '@/hooks/useCategories'
 
 /* ─── helpers ─── */
-
-function toLocalDateKey(timestamp: number): string {
-  const d = new Date(timestamp)
-  const y = d.getFullYear()
-  const m = String(d.getMonth() + 1).padStart(2, '0')
-  const day = String(d.getDate()).padStart(2, '0')
-  return `${y}-${m}-${day}`
-}
 
 function getTodayKey(): string {
   return toLocalDateKey(Date.now())

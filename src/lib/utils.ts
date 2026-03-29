@@ -60,6 +60,37 @@ export function getGreeting(): string {
   return 'Good evening'
 }
 
+/** YYYY-MM-DD in the user's local calendar (for chart keys and grouping). */
+export function toLocalDateKey(timestamp: number): string {
+  const d = new Date(timestamp)
+  const y = d.getFullYear()
+  const m = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  return `${y}-${m}-${day}`
+}
+
+/** IANA timezone for Convex day bucketing; falls back to UTC. */
+export function getClientTimeZone(): string {
+  try {
+    const tz = Intl.DateTimeFormat().resolvedOptions().timeZone
+    return tz && tz.length > 0 ? tz : 'UTC'
+  } catch {
+    return 'UTC'
+  }
+}
+
+/** `input type="date"` value from start-of-day ms in local time. */
+export function toDateInputValue(startOfDayMs: number): string {
+  return toLocalDateKey(startOfDayMs)
+}
+
+/** Local midnight ms from `YYYY-MM-DD` (from date input). */
+export function parseDateInputToStartOfDay(isoDate: string): number {
+  const [y, mo, d] = isoDate.split('-').map(Number)
+  if (!y || !mo || !d) return startOfDay()
+  return startOfDay(new Date(y, mo - 1, d))
+}
+
 /** Get start of day (midnight) in Unix ms */
 export function startOfDay(date: Date = new Date()): number {
   const d = new Date(date)
