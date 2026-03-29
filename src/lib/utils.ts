@@ -91,6 +91,22 @@ export function parseDateInputToStartOfDay(isoDate: string): number {
   return startOfDay(new Date(y, mo - 1, d))
 }
 
+/** Local start of today — latest calendar day allowed for recording sales. */
+export function maxSaleDateMs(): number {
+  return startOfDay()
+}
+
+/** Clamp a start-of-day timestamp so it is not after local today. */
+export function clampSaleDateToTodayMs(ms: number): number {
+  const cap = maxSaleDateMs()
+  return ms > cap ? cap : ms
+}
+
+/** Parse date input and clamp to today if the user picked a future day. */
+export function parseSaleDateInputClamped(isoDate: string): number {
+  return clampSaleDateToTodayMs(parseDateInputToStartOfDay(isoDate))
+}
+
 /** Get start of day (midnight) in Unix ms */
 export function startOfDay(date: Date = new Date()): number {
   const d = new Date(date)

@@ -6,7 +6,9 @@ import {
   formatCurrency,
   startOfDay,
   toDateInputValue,
-  parseDateInputToStartOfDay,
+  parseSaleDateInputClamped,
+  clampSaleDateToTodayMs,
+  maxSaleDateMs,
 } from '@/lib/utils'
 import { useUpdateSaleItem } from '@/hooks/useSales'
 import { useToast } from '@/components/shared/Toast'
@@ -27,7 +29,9 @@ export default function EditSaleModal({ item, categories, onClose }: EditSaleMod
   const [amount,      setAmount]      = useState(String(item.amount))
   const [categoryId,  setCategoryId]  = useState<string>(item.categoryId ?? '')
   const [note,        setNote]        = useState(item.note ?? '')
-  const [saleDateMs, setSaleDateMs]  = useState(() => startOfDay(new Date(item.saleDate)))
+  const [saleDateMs, setSaleDateMs]  = useState(() =>
+    clampSaleDateToTodayMs(startOfDay(new Date(item.saleDate))),
+  )
   const [saving,      setSaving]      = useState(false)
   const [errors,      setErrors]      = useState<{ productName?: string; amount?: string }>({})
 
@@ -43,7 +47,7 @@ export default function EditSaleModal({ item, categories, onClose }: EditSaleMod
       amount:      item.amount,
       categoryId:  item.categoryId ?? '',
       note:        (item.note ?? '').trim(),
-      saleDateMs:  startOfDay(new Date(item.saleDate)),
+      saleDateMs:  clampSaleDateToTodayMs(startOfDay(new Date(item.saleDate))),
     }),
     [item],
   )
@@ -91,7 +95,9 @@ export default function EditSaleModal({ item, categories, onClose }: EditSaleMod
         categoryId:  categoryId ? (categoryId as Id<'categories'>) : undefined,
         note:        note.trim() || undefined,
         saleDate:
-          saleDateMs !== initialSnapshot.saleDateMs ? saleDateMs : undefined,
+          saleDateMs !== initialSnapshot.saleDateMs
+            ? clampSaleDateToTodayMs(saleDateMs)
+            : undefined,
       })
       showToast('Sale updated!', 'success')
       onClose()
@@ -212,7 +218,8 @@ export default function EditSaleModal({ item, categories, onClose }: EditSaleMod
                 id="edit-sale-date"
                 type="date"
                 value={toDateInputValue(saleDateMs)}
-                onChange={(e) => setSaleDateMs(parseDateInputToStartOfDay(e.target.value))}
+                max={toDateInputValue(maxSaleDateMs())}
+                onChange={(e) => setSaleDateMs(parseSaleDateInputClamped(e.target.value))}
                 disabled={saving}
                 aria-label="Sale date"
                 className={cn(

@@ -7,7 +7,9 @@ import {
   formatCurrency,
   startOfDay,
   toDateInputValue,
-  parseDateInputToStartOfDay,
+  parseSaleDateInputClamped,
+  clampSaleDateToTodayMs,
+  maxSaleDateMs,
 } from '@/lib/utils'
 import { useRecordSales } from '@/hooks/useSales'
 import { useCategories } from '@/hooks/useCategories'
@@ -145,7 +147,10 @@ export default function AddSaleModal({ onClose }: AddSaleModalProps) {
         note:        r.note.trim() || undefined,
       }))
 
-      const result = await recordSales({ items, sessionDate: saleDateMs }) as { itemCount: number; totalAmount: number }
+      const result = await recordSales({
+        items,
+        sessionDate: clampSaleDateToTodayMs(saleDateMs),
+      }) as { itemCount: number; totalAmount: number }
       const msg = `${result.itemCount} sale${result.itemCount !== 1 ? 's' : ''} recorded! Total: ${formatCurrency(result.totalAmount)}`
       showToast(msg, 'success')
       onClose()
@@ -234,7 +239,8 @@ export default function AddSaleModal({ onClose }: AddSaleModalProps) {
                     ref={saleDateInputRef}
                     type="date"
                     value={toDateInputValue(saleDateMs)}
-                    onChange={(e) => setSaleDateMs(parseDateInputToStartOfDay(e.target.value))}
+                    max={toDateInputValue(maxSaleDateMs())}
+                    onChange={(e) => setSaleDateMs(parseSaleDateInputClamped(e.target.value))}
                     disabled={saving}
                     aria-label="Sale date"
                     className={cn(
