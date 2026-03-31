@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
-import { Sun, CalendarDays, CalendarRange, TrendingUp, Download } from 'lucide-react'
+import { Sun, CalendarDays, CalendarRange, Calendar, TrendingUp, Download } from 'lucide-react'
 import { UserButton, useUser } from '@clerk/clerk-react'
 import { Link } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
@@ -9,6 +9,7 @@ import SummaryCards    from '@/components/dashboard/SummaryCards'
 import DailyTab        from '@/components/dashboard/DailyTab'
 import WeeklyChart     from '@/components/dashboard/WeeklyChart'
 import MonthlyChart    from '@/components/dashboard/MonthlyChart'
+import YearlyChart     from '@/components/dashboard/YearlyChart'
 import FAB             from '@/components/shared/FAB'
 import AddCategoryModal      from '@/components/modals/AddCategoryModal'
 import AddSaleModal          from '@/components/modals/AddSaleModal'
@@ -19,13 +20,21 @@ import { useDashboardStats } from '@/hooks/useSales'
 import { useHorizontalTabSwipe } from '@/hooks/useHorizontalTabSwipe'
 import { useMediaQueryMatch } from '@/hooks/useMediaQueryMatch'
 
-type Tab = 'daily' | 'weekly' | 'monthly'
+type Tab = 'daily' | 'weekly' | 'monthly' | 'yearly'
 
 const TABS: { id: Tab; label: string; icon: React.ReactNode }[] = [
   { id: 'daily',   label: 'Daily',   icon: <Sun          size={14} /> },
   { id: 'weekly',  label: 'Weekly',  icon: <CalendarDays  size={14} /> },
   { id: 'monthly', label: 'Monthly', icon: <CalendarRange size={14} /> },
+  { id: 'yearly', label: 'Yearly', icon: <Calendar size={14} /> },
 ]
+
+const TAB_LABELS: Record<Tab, string> = {
+  daily: 'Daily',
+  weekly: 'Weekly',
+  monthly: 'Monthly',
+  yearly: 'Yearly',
+}
 
 // ── PWA install hook ────────────────────────────────────────────────────────
 
@@ -97,10 +106,10 @@ export default function Dashboard() {
   const reduceMotion = useMediaQueryMatch('(prefers-reduced-motion: reduce)')
 
   const goTabNext = useCallback(() => {
-    setActiveTab((t) => (t === 'daily' ? 'weekly' : t === 'weekly' ? 'monthly' : t))
+    setActiveTab((t) => (t === 'daily' ? 'weekly' : t === 'weekly' ? 'monthly' : t === 'monthly' ? 'yearly' : t))
   }, [])
   const goTabPrev = useCallback(() => {
-    setActiveTab((t) => (t === 'monthly' ? 'weekly' : t === 'weekly' ? 'daily' : t))
+    setActiveTab((t) => (t === 'yearly' ? 'monthly' : t === 'monthly' ? 'weekly' : t === 'weekly' ? 'daily' : t))
   }, [])
 
   useHorizontalTabSwipe(tabSwipeRef, {
@@ -184,7 +193,7 @@ export default function Dashboard() {
         </section>
 
         {/* Tab bar */}
-        <div className="flex gap-1 p-1 rounded-xl bg-muted/50 border border-border/60 mb-6">
+        <div className="grid grid-cols-4 gap-1 p-1 rounded-xl bg-muted/50 border border-border/60 mb-4 w-full overflow-hidden">
           {TABS.map((tab) => (
             <button
               key={tab.id}
@@ -192,7 +201,7 @@ export default function Dashboard() {
               aria-selected={activeTab === tab.id}
               role="tab"
               className={cn(
-                'flex-1 flex items-center justify-center gap-1.5 py-2 px-3 rounded-lg',
+                'min-w-0 flex items-center justify-center gap-1.5 py-2 px-2 sm:px-3 rounded-lg',
                 'text-[0.8rem] font-semibold transition-all duration-200 active:scale-95',
                 activeTab === tab.id
                   ? 'bg-background text-foreground shadow-sm'
@@ -200,10 +209,13 @@ export default function Dashboard() {
               )}
             >
               {tab.icon}
-              <span>{tab.label}</span>
+              <span className="hidden sm:inline">{tab.label}</span>
             </button>
           ))}
         </div>
+        <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-2 sm:hidden">
+          {TAB_LABELS[activeTab]}
+        </p>
 
         {/* Tab panels — swipe left/right on small screens to change period */}
         <div
@@ -223,6 +235,7 @@ export default function Dashboard() {
               {activeTab === 'daily'   && <DailyTab />}
               {activeTab === 'weekly'  && <WeeklyChart />}
               {activeTab === 'monthly' && <MonthlyChart />}
+              {activeTab === 'yearly' && <YearlyChart />}
             </motion.section>
           </AnimatePresence>
         </div>

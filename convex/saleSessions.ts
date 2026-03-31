@@ -1,6 +1,7 @@
 import { ConvexError, v } from 'convex/values'
 import { mutation, query, type MutationCtx, type QueryCtx } from './_generated/server'
 import type { Id } from './_generated/dataModel'
+import { paginationOptsValidator } from 'convex/server'
 
 /** YYYY-MM-DD in the given IANA zone (matches browser local keys when zones align). */
 function dateKeyInTimeZone(ms: number, timeZone: string): string {
@@ -9,6 +10,36 @@ function dateKeyInTimeZone(ms: number, timeZone: string): string {
   } catch {
     return new Date(ms).toISOString().split('T')[0]!
   }
+}
+
+function monthIndexInTimeZone(ms: number, timeZone: string): number {
+  try {
+    const parts = new Intl.DateTimeFormat('en-CA', {
+      timeZone,
+      month: '2-digit',
+    }).formatToParts(new Date(ms))
+    const monthPart = parts.find((part) => part.type === 'month')?.value
+    const month = Number(monthPart)
+    if (Number.isFinite(month) && month >= 1 && month <= 12) return month - 1
+  } catch {
+    // Fall through to UTC/local fallback below.
+  }
+  return new Date(ms).getMonth()
+}
+
+function yearInTimeZone(ms: number, timeZone: string): number {
+  try {
+    const parts = new Intl.DateTimeFormat('en-CA', {
+      timeZone,
+      year: 'numeric',
+    }).formatToParts(new Date(ms))
+    const yearPart = parts.find((part) => part.type === 'year')?.value
+    const year = Number(yearPart)
+    if (Number.isFinite(year)) return year
+  } catch {
+    // Fall through to UTC/local fallback below.
+  }
+  return new Date(ms).getFullYear()
 }
 
 /**
@@ -138,6 +169,74 @@ export const getSessionsForRange = query({
   },
 })
 
+/** Get all-time sessions + items in descending date order (paginated). */
+export const getSessionsPaginated = query({
+  args: {
+    paginationOpts: paginationOptsValidator,
+  },
+  handler: async (ctx, args) => {
+    const user = await requireUser(ctx)
+    if (!user) return { page: [], isDone: true, continueCursor: '' }
+
+    const page = await ctx.db
+      .query('saleSessions')
+      .withIndex('by_userId_sessionDate', (q) => q.eq('userId', user._id))
+      .order('desc')
+      .paginate(args.paginationOpts)
+
+    const sessionsWithItems = await Promise.all(
+      page.page.map(async (session) => {
+        const items = await ctx.db
+          .query('sales')
+          .withIndex('by_sessionId', (q) => q.eq('sessionId', session._id))
+          .collect()
+        return { ...session, items }
+      })
+    )
+
+    return {
+      ...page,
+      page: sessionsWithItems,
+    }
+  },
+})
+
+/** Get sessions + items in descending date order for a date range (paginated). */
+export const getSessionsForRangePaginated = query({
+  args: {
+    startDate: v.number(),
+    endDate: v.number(),
+    paginationOpts: paginationOptsValidator,
+  },
+  handler: async (ctx, args) => {
+    const user = await requireUser(ctx)
+    if (!user) return { page: [], isDone: true, continueCursor: '' }
+
+    const page = await ctx.db
+      .query('saleSessions')
+      .withIndex('by_userId_sessionDate', (q) =>
+        q.eq('userId', user._id).gte('sessionDate', args.startDate).lte('sessionDate', args.endDate)
+      )
+      .order('desc')
+      .paginate(args.paginationOpts)
+
+    const sessionsWithItems = await Promise.all(
+      page.page.map(async (session) => {
+        const items = await ctx.db
+          .query('sales')
+          .withIndex('by_sessionId', (q) => q.eq('sessionId', session._id))
+          .collect()
+        return { ...session, items }
+      })
+    )
+
+    return {
+      ...page,
+      page: sessionsWithItems,
+    }
+  },
+})
+
 /** Get daily totals for a date range (for charts) */
 export const getDailyTotals = query({
   args: {
@@ -209,6 +308,7 @@ export const getStats = query({
       todayExpenseTotal: 0, todayExpenseCount: 0,
       weekTotal: 0,  weekCount: 0,
       monthTotal: 0, monthCount: 0,
+      allTimeTotal: 0, allTimeCount: 0, allTimeSalesTotal: 0, allTimeExpenseTotal: 0,
       topCategoryName: null,
     }
 
@@ -266,6 +366,16 @@ export const getStats = query({
       )
       .collect()
 
+    const allSessions = await ctx.db
+      .query('saleSessions')
+      .withIndex('by_userId_sessionDate', (q) => q.eq('userId', user._id))
+      .collect()
+
+    const allExpenses = await ctx.db
+      .query('expenses')
+      .withIndex('by_userId_expenseDate', (q) => q.eq('userId', user._id))
+      .collect()
+
     const todaySalesTotal  = todaySessions.reduce((s, x) => s + x.totalAmount, 0)
     const todayCount       = todaySessions.reduce((s, x) => s + x.itemCount, 0)
     const todayExpenseTotal = todayExpenses.reduce((s, x) => s + x.amount, 0)
@@ -283,6 +393,10 @@ export const getStats = query({
     const todayTotal    = todaySalesTotal
     const weekTotal   = weekSalesTotal - weekExpenseTotal
     const monthTotal  = monthSalesTotal - monthExpenseTotal
+    const allTimeSalesTotal = allSessions.reduce((s, x) => s + x.totalAmount, 0)
+    const allTimeCount = allSessions.reduce((s, x) => s + x.itemCount, 0)
+    const allTimeExpenseTotal = allExpenses.reduce((s, x) => s + x.amount, 0)
+    const allTimeTotal = allTimeSalesTotal - allTimeExpenseTotal
 
     const catTotals = new Map<string, number>()
 
@@ -321,7 +435,97 @@ export const getStats = query({
       weekCount,
       monthTotal,
       monthCount,
+      allTimeTotal,
+      allTimeCount,
+      allTimeSalesTotal,
+      allTimeExpenseTotal,
       topCategoryName,
     }
+  },
+})
+
+/** Get monthly totals for a selected year; includes sales and net values per month. */
+export const getYearlyMonthlyTotals = query({
+  args: {
+    year: v.number(),
+    timeZone: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const user = await requireUser(ctx)
+    if (!user) {
+      return Array.from({ length: 12 }, (_, monthIndex) => ({
+        monthIndex,
+        salesTotal: 0,
+        netTotal: 0,
+      }))
+    }
+
+    const tz = args.timeZone.trim() || 'UTC'
+    const salesTotals = Array.from({ length: 12 }, () => 0)
+    const expenseTotals = Array.from({ length: 12 }, () => 0)
+
+    const sessions = await ctx.db
+      .query('saleSessions')
+      .withIndex('by_userId_sessionDate', (q) => q.eq('userId', user._id))
+      .collect()
+
+    for (const session of sessions) {
+      if (yearInTimeZone(session.sessionDate, tz) !== args.year) continue
+      const monthIndex = monthIndexInTimeZone(session.sessionDate, tz)
+      salesTotals[monthIndex] += session.totalAmount
+    }
+
+    const expenses = await ctx.db
+      .query('expenses')
+      .withIndex('by_userId_expenseDate', (q) => q.eq('userId', user._id))
+      .collect()
+
+    for (const expense of expenses) {
+      if (yearInTimeZone(expense.expenseDate, tz) !== args.year) continue
+      const monthIndex = monthIndexInTimeZone(expense.expenseDate, tz)
+      expenseTotals[monthIndex] += expense.amount
+    }
+
+    return salesTotals.map((salesTotal, monthIndex) => ({
+      monthIndex,
+      salesTotal,
+      netTotal: salesTotal - expenseTotals[monthIndex],
+    }))
+  },
+})
+
+/** Return selectable years based on available sales/expense data. */
+export const getAvailableYears = query({
+  args: {
+    timeZone: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const user = await requireUser(ctx)
+    const tz = args.timeZone.trim() || 'UTC'
+    const currentYear = yearInTimeZone(Date.now(), tz)
+
+    if (!user) return [currentYear]
+
+    const years = new Set<number>([currentYear])
+
+    const sessions = await ctx.db
+      .query('saleSessions')
+      .withIndex('by_userId_sessionDate', (q) => q.eq('userId', user._id))
+      .collect()
+
+    for (const session of sessions) {
+      years.add(yearInTimeZone(session.sessionDate, tz))
+    }
+
+    const expenses = await ctx.db
+      .query('expenses')
+      .withIndex('by_userId_expenseDate', (q) => q.eq('userId', user._id))
+      .collect()
+
+    for (const expense of expenses) {
+      years.add(yearInTimeZone(expense.expenseDate, tz))
+    }
+
+    return Array.from(years.values()).sort((a, b) => b - a)
   },
 })

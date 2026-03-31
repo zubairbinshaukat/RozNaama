@@ -1,5 +1,6 @@
 import { ConvexError, v } from 'convex/values'
 import { mutation, query, type MutationCtx, type QueryCtx } from './_generated/server'
+import { paginationOptsValidator } from 'convex/server'
 
 async function requireUser(ctx: QueryCtx | MutationCtx) {
   const identity = await ctx.auth.getUserIdentity()
@@ -55,6 +56,44 @@ export const getForRange = query({
           .lte('expenseDate', args.endDate),
       )
       .collect()
+  },
+})
+
+/** Get all-time expenses in descending date order (paginated). */
+export const getPaginated = query({
+  args: {
+    paginationOpts: paginationOptsValidator,
+  },
+  handler: async (ctx, args) => {
+    const user = await requireUser(ctx)
+    if (!user) return { page: [], isDone: true, continueCursor: '' }
+
+    return ctx.db
+      .query('expenses')
+      .withIndex('by_userId_expenseDate', (q) => q.eq('userId', user._id))
+      .order('desc')
+      .paginate(args.paginationOpts)
+  },
+})
+
+/** Get expenses in descending date order for a date range (paginated). */
+export const getForRangePaginated = query({
+  args: {
+    startDate: v.number(),
+    endDate: v.number(),
+    paginationOpts: paginationOptsValidator,
+  },
+  handler: async (ctx, args) => {
+    const user = await requireUser(ctx)
+    if (!user) return { page: [], isDone: true, continueCursor: '' }
+
+    return ctx.db
+      .query('expenses')
+      .withIndex('by_userId_expenseDate', (q) =>
+        q.eq('userId', user._id).gte('expenseDate', args.startDate).lte('expenseDate', args.endDate),
+      )
+      .order('desc')
+      .paginate(args.paginationOpts)
   },
 })
 

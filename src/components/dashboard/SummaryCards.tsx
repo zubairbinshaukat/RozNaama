@@ -72,7 +72,7 @@ function SummaryCard({ icon, label, value, subLabel, accent = 'bg-primary/10', c
 
 interface SummaryCardsProps {
   stats:     DashboardStats | undefined
-  activeTab: 'daily' | 'weekly' | 'monthly'
+  activeTab: 'daily' | 'weekly' | 'monthly' | 'yearly'
   onAddExpense?: () => void
 }
 
@@ -181,6 +181,36 @@ export default function SummaryCards({ stats, activeTab, onAddExpense }: Summary
         label:    'Top Category',
         value:    stats.topCategoryName ?? '—',
         subLabel: 'most popular today',
+        accent:   'bg-violet-500/10',
+      },
+    ],
+    yearly: [
+      {
+        icon:     <CalendarRange className="text-primary" size={18} strokeWidth={1.5} />,
+        label:    'All-Time Net',
+        value:    formatAmount(stats.allTimeTotal),
+        subLabel: `${stats.allTimeSalesTotal.toLocaleString('en-PK')} - ${stats.allTimeExpenseTotal.toLocaleString('en-PK')}`,
+        accent:   'bg-primary/10',
+      },
+      {
+        icon:     <Hash className="text-emerald-500" size={18} strokeWidth={1.5} />,
+        label:    'All-Time Sales',
+        value:    String(stats.allTimeCount),
+        subLabel: 'entries recorded overall',
+        accent:   'bg-emerald-500/10',
+      },
+      {
+        icon:     <BarChart2 className="text-amber-500" size={18} strokeWidth={1.5} />,
+        label:    'Current Month Net',
+        value:    formatAmount(stats.monthTotal),
+        subLabel: `${stats.monthCount} sales this month`,
+        accent:   'bg-amber-500/10',
+      },
+      {
+        icon:     <Star className="text-violet-500" size={18} strokeWidth={1.5} />,
+        label:    'Current Week Net',
+        value:    formatAmount(stats.weekTotal),
+        subLabel: `${stats.weekCount} sales this week`,
         accent:   'bg-violet-500/10',
       },
     ],

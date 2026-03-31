@@ -151,3 +151,17 @@ export function endOfMonth(date: Date = new Date()): number {
   d.setHours(23, 59, 59, 999)
   return d.getTime()
 }
+
+/** Get start of the provided/current year at midnight. */
+export function startOfYear(date: Date = new Date()): number {
+  const d = new Date(date.getFullYear(), 0, 1)
+  d.setHours(0, 0, 0, 0)
+  return d.getTime()
+}
+
+/** Get end of the provided/current year at end-of-day. */
+export function endOfYear(date: Date = new Date()): number {
+  const d = new Date(date.getFullYear(), 11, 31)
+  d.setHours(23, 59, 59, 999)
+  return d.getTime()
+}

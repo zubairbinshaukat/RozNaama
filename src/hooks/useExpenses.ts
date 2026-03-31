@@ -1,6 +1,7 @@
-import { useQuery, useMutation } from 'convex/react'
+import { useMutation, usePaginatedQuery, useQuery } from 'convex/react'
 import { api } from '../../convex/_generated/api'
 import { startOfDay, endOfDay, startOfWeek, endOfWeek, startOfMonth, endOfMonth } from '@/lib/utils'
+import { startOfYear, endOfYear } from '@/lib/utils'
 import type { Id } from '../../convex/_generated/dataModel'
 
 export type ExpenseEntry = {
@@ -26,6 +27,30 @@ export function useWeekExpenses(): ExpenseEntry[] | undefined {
 
 export function useMonthExpenses(): ExpenseEntry[] | undefined {
   return useExpensesForRange(startOfMonth(), endOfMonth())
+}
+
+/** Get all-time expenses (paginated, newest first). */
+export function usePaginatedExpenses(initialNumItems = 20) {
+  return usePaginatedQuery(
+    api.expenses.getPaginated,
+    {},
+    { initialNumItems }
+  )
+}
+
+/** Get expenses for custom range (paginated, newest first). */
+export function usePaginatedExpensesForRange(startDate: number, endDate: number, initialNumItems = 20) {
+  return usePaginatedQuery(
+    api.expenses.getForRangePaginated,
+    { startDate, endDate },
+    { initialNumItems }
+  )
+}
+
+/** Convenience: paginated expenses for selected year. */
+export function usePaginatedYearExpenses(year: number, initialNumItems = 20) {
+  const date = new Date(year, 0, 1)
+  return usePaginatedExpensesForRange(startOfYear(date), endOfYear(date), initialNumItems)
 }
 
 /** Record a new expense entry */

@@ -1,9 +1,10 @@
-import { useQuery, useMutation } from 'convex/react'
+import { useMutation, usePaginatedQuery, useQuery } from 'convex/react'
 import { api } from '../../convex/_generated/api'
 import {
   startOfDay, endOfDay,
   startOfWeek, endOfWeek,
   startOfMonth, endOfMonth,
+  startOfYear, endOfYear,
   getClientTimeZone,
 } from '@/lib/utils'
 import type { Id } from '../../convex/_generated/dataModel'
@@ -35,6 +36,12 @@ export type DailyTotal = {
   total: number
 }
 
+export type YearlyMonthlyTotal = {
+  monthIndex: number
+  salesTotal: number
+  netTotal: number
+}
+
 export type DashboardStats = {
   todayTotal:      number
   todaySalesTotal: number
@@ -46,6 +53,10 @@ export type DashboardStats = {
   weekCount:       number
   monthTotal:      number
   monthCount:      number
+  allTimeTotal:    number
+  allTimeCount:    number
+  allTimeSalesTotal: number
+  allTimeExpenseTotal: number
   topCategoryName: string | null
 }
 
@@ -83,6 +94,24 @@ export function useMonthSessions(): SaleSession[] | undefined {
   }) as SaleSession[] | undefined
 }
 
+/** Get all-time sessions+items (paginated, newest first). */
+export function usePaginatedSessions(initialNumItems = 20) {
+  return usePaginatedQuery(
+    api.saleSessions.getSessionsPaginated,
+    {},
+    { initialNumItems }
+  )
+}
+
+/** Get sessions+items for a custom range (paginated, newest first). */
+export function usePaginatedSessionsForRange(startDate: number, endDate: number, initialNumItems = 20) {
+  return usePaginatedQuery(
+    api.saleSessions.getSessionsForRangePaginated,
+    { startDate, endDate },
+    { initialNumItems }
+  )
+}
+
 /** Get sessions+items for the current week (for weekly detailed list) */
 export function useWeekSessions(): SaleSession[] | undefined {
   return useQuery(api.saleSessions.getSessionsForRange, {
@@ -107,6 +136,27 @@ export function useMonthlyTotals(): DailyTotal[] | undefined {
     endDate:   endOfMonth(),
     timeZone:  getClientTimeZone(),
   }) as DailyTotal[] | undefined
+}
+
+/** Get monthly totals for a specific year (for yearly chart). */
+export function useYearlyMonthlyTotals(year: number): YearlyMonthlyTotal[] | undefined {
+  return useQuery(api.saleSessions.getYearlyMonthlyTotals, {
+    year,
+    timeZone: getClientTimeZone(),
+  }) as YearlyMonthlyTotal[] | undefined
+}
+
+/** Convenience: paginated sessions for selected year. */
+export function usePaginatedYearSessions(year: number, initialNumItems = 20) {
+  const date = new Date(year, 0, 1)
+  return usePaginatedSessionsForRange(startOfYear(date), endOfYear(date), initialNumItems)
+}
+
+/** Get available years for yearly chart picker. */
+export function useAvailableYears(): number[] | undefined {
+  return useQuery(api.saleSessions.getAvailableYears, {
+    timeZone: getClientTimeZone(),
+  }) as number[] | undefined
 }
 
 /** Get dashboard summary stats */
