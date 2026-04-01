@@ -1,5 +1,6 @@
 import { Routes, Route, Navigate } from 'react-router-dom'
 import { ToastProvider } from '@/components/shared/Toast'
+import { ViewAsProvider } from '@/context/ViewAsContext'
 import ProtectedRoute from '@/components/shared/ProtectedRoute'
 import Landing    from '@/pages/Landing'
 import SignInPage from '@/pages/SignInPage'
@@ -17,7 +18,9 @@ export default function App() {
           path="/dashboard"
           element={
             <ProtectedRoute>
-              <Dashboard />
+              <ViewAsProvider>
+                <Dashboard />
+              </ViewAsProvider>
             </ProtectedRoute>
           }
         />

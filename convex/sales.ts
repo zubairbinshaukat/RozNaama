@@ -1,25 +1,16 @@
 import { ConvexError, v } from 'convex/values'
-import { mutation, query, type MutationCtx, type QueryCtx } from './_generated/server'
+import { mutation, query } from './_generated/server'
 import type { Id } from './_generated/dataModel'
-
-async function requireUser(ctx: QueryCtx | MutationCtx) {
-  const identity = await ctx.auth.getUserIdentity()
-  if (!identity) throw new ConvexError('Unauthorized')
-
-  const email = identity.email
-  if (!email) throw new ConvexError('No email on identity')
-
-  return ctx.db
-    .query('users')
-    .withIndex('by_email', (q) => q.eq('email', email))
-    .first()
-}
+import { requireUser, resolveDataUser } from './authHelpers'
 
 /** All sale line items for a category (newest by saleDate first in handler sort) */
 export const listByCategoryId = query({
-  args: { categoryId: v.id('categories') },
+  args: {
+    categoryId:   v.id('categories'),
+    viewAsUserId: v.optional(v.id('users')),
+  },
   handler: async (ctx, args) => {
-    const user = await requireUser(ctx)
+    const user = await resolveDataUser(ctx, args.viewAsUserId)
     if (!user) return []
 
     const rows = await ctx.db
@@ -36,9 +27,9 @@ export const listByCategoryId = query({
 
 /** Total number of sale line items per category */
 export const getCountsByCategory = query({
-  args: {},
-  handler: async (ctx) => {
-    const user = await requireUser(ctx)
+  args: { viewAsUserId: v.optional(v.id('users')) },
+  handler: async (ctx, args) => {
+    const user = await resolveDataUser(ctx, args.viewAsUserId)
     if (!user) return []
 
     const rows = await ctx.db
@@ -61,9 +52,13 @@ export const getCountsByCategory = query({
 
 /** Get all sale items for a date range */
 export const getForDateRange = query({
-  args: { startDate: v.number(), endDate: v.number() },
+  args: {
+    startDate:    v.number(),
+    endDate:      v.number(),
+    viewAsUserId: v.optional(v.id('users')),
+  },
   handler: async (ctx, args) => {
-    const user = await requireUser(ctx)
+    const user = await resolveDataUser(ctx, args.viewAsUserId)
     if (!user) return []
     return ctx.db
       .query('sales')

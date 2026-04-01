@@ -5,6 +5,7 @@ import { cn, formatCurrency, formatDate, formatTime, toLocalDateKey } from '@/li
 import { useDeleteSaleItem } from '@/hooks/useSales'
 import { useDeleteExpenseItem } from '@/hooks/useExpenses'
 import { useToast } from '@/components/shared/Toast'
+import { useIsViewingOtherSafe } from '@/context/ViewAsContext'
 import EditSaleModal from '@/components/modals/EditSaleModal'
 import EditExpenseModal from '@/components/modals/EditExpenseModal'
 import SaleDetailModal from '@/components/modals/SaleDetailModal'
@@ -158,6 +159,7 @@ function SaleItemCard({
   onCategoryOpen,
   onEdit,
   onDelete,
+  readOnly,
 }: {
   item:             SaleItem
   categories:       Category[]
@@ -166,6 +168,7 @@ function SaleItemCard({
   onCategoryOpen:   (category: Category) => void
   onEdit:           (item: SaleItem) => void
   onDelete:         (item: SaleItem) => void
+  readOnly:         boolean
 }) {
   const cat   = categories.find((c) => c._id === item.categoryId)
   const color = cat?.color ?? '#888888'
@@ -267,43 +270,48 @@ function SaleItemCard({
               onClick={() => onViewDetail(item)}
               aria-label="View sale details"
               className={cn(
-                'flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl text-xs font-medium',
+                'flex items-center justify-center gap-1.5 py-2 rounded-xl text-xs font-medium',
                 'text-muted-foreground/70 transition-all duration-200',
                 'hover:bg-foreground/4 hover:text-foreground',
                 'active:scale-95 touch-manipulation',
+                'flex-1',
               )}
             >
               <Eye size={14} strokeWidth={2} />
               <span className="hidden sm:inline">View</span>
             </button>
-            <button
-              type="button"
-              onClick={() => onEdit(item)}
-              aria-label="Edit sale"
-              className={cn(
-                'flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl text-xs font-medium',
-                'text-muted-foreground/70 transition-all duration-200',
-                'hover:bg-foreground/4 hover:text-blue-400',
-                'active:scale-95 touch-manipulation',
-              )}
-            >
-              <Pencil size={13} strokeWidth={2} />
-              <span className="hidden sm:inline">Edit</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => onDelete(item)}
-              aria-label="Delete sale"
-              className={cn(
-                'flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl text-xs font-medium',
-                'text-muted-foreground/70 transition-all duration-200',
-                'hover:bg-destructive/6 hover:text-destructive',
-                'active:scale-95 touch-manipulation',
-              )}
-            >
-              <Trash2 size={13} strokeWidth={2} />
-              <span className="hidden sm:inline">Delete</span>
-            </button>
+            {!readOnly && (
+              <>
+                <button
+                  type="button"
+                  onClick={() => onEdit(item)}
+                  aria-label="Edit sale"
+                  className={cn(
+                    'flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl text-xs font-medium',
+                    'text-muted-foreground/70 transition-all duration-200',
+                    'hover:bg-foreground/4 hover:text-blue-400',
+                    'active:scale-95 touch-manipulation',
+                  )}
+                >
+                  <Pencil size={13} strokeWidth={2} />
+                  <span className="hidden sm:inline">Edit</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => onDelete(item)}
+                  aria-label="Delete sale"
+                  className={cn(
+                    'flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl text-xs font-medium',
+                    'text-muted-foreground/70 transition-all duration-200',
+                    'hover:bg-destructive/6 hover:text-destructive',
+                    'active:scale-95 touch-manipulation',
+                  )}
+                >
+                  <Trash2 size={13} strokeWidth={2} />
+                  <span className="hidden sm:inline">Delete</span>
+                </button>
+              </>
+            )}
           </div>
         </div>
       </div>
@@ -321,6 +329,7 @@ function SaleItemsGrid({
   onEdit,
   onDelete,
   compact,
+  readOnly,
 }: {
   items:            SaleItem[]
   categories:       Category[]
@@ -329,6 +338,7 @@ function SaleItemsGrid({
   onEdit:           (item: SaleItem) => void
   onDelete:         (item: SaleItem) => void
   compact:          boolean
+  readOnly:         boolean
 }) {
   const n = items.length
   if (n === 0) return null
@@ -352,6 +362,7 @@ function SaleItemsGrid({
           onCategoryOpen={onCategoryOpen}
           onEdit={onEdit}
           onDelete={onDelete}
+          readOnly={readOnly}
         />
       ))}
     </div>
@@ -365,11 +376,13 @@ function DayCard({
   categories,
   isOpenByDefault,
   compact,
+  readOnly,
 }: {
   group:           DayGroup
   categories:      Category[]
   isOpenByDefault: boolean
   compact:         boolean
+  readOnly:        boolean
 }) {
   const [expanded,      setExpanded]      = useState(isOpenByDefault)
   const [editingItem,   setEditingItem]   = useState<SaleItem | null>(null)
@@ -523,36 +536,38 @@ function DayCard({
                               {formatCurrency(exp.amount)}
                             </p>
                           </div>
-                          <div className="mt-2 pt-2 border-t border-border/50 flex items-center gap-1">
-                            <button
-                              type="button"
-                              onClick={() => setEditingExpense(exp)}
-                              aria-label="Edit expense"
-                              className={cn(
-                                'flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl text-xs font-medium',
-                                'text-muted-foreground/70 transition-all duration-200',
-                                'hover:bg-foreground/4 hover:text-blue-400',
-                                'active:scale-95 touch-manipulation',
-                              )}
-                            >
-                              <Pencil size={13} strokeWidth={2} />
-                              <span className="hidden sm:inline">Edit</span>
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => setDeletingExpense(exp)}
-                              aria-label="Delete expense"
-                              className={cn(
-                                'flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl text-xs font-medium',
-                                'text-muted-foreground/70 transition-all duration-200',
-                                'hover:bg-destructive/6 hover:text-destructive',
-                                'active:scale-95 touch-manipulation',
-                              )}
-                            >
-                              <Trash2 size={13} strokeWidth={2} />
-                              <span className="hidden sm:inline">Delete</span>
-                            </button>
-                          </div>
+                          {!readOnly && (
+                            <div className="mt-2 pt-2 border-t border-border/50 flex items-center gap-1">
+                              <button
+                                type="button"
+                                onClick={() => setEditingExpense(exp)}
+                                aria-label="Edit expense"
+                                className={cn(
+                                  'flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl text-xs font-medium',
+                                  'text-muted-foreground/70 transition-all duration-200',
+                                  'hover:bg-foreground/4 hover:text-blue-400',
+                                  'active:scale-95 touch-manipulation',
+                                )}
+                              >
+                                <Pencil size={13} strokeWidth={2} />
+                                <span className="hidden sm:inline">Edit</span>
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setDeletingExpense(exp)}
+                                aria-label="Delete expense"
+                                className={cn(
+                                  'flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl text-xs font-medium',
+                                  'text-muted-foreground/70 transition-all duration-200',
+                                  'hover:bg-destructive/6 hover:text-destructive',
+                                  'active:scale-95 touch-manipulation',
+                                )}
+                              >
+                                <Trash2 size={13} strokeWidth={2} />
+                                <span className="hidden sm:inline">Delete</span>
+                              </button>
+                            </div>
+                          )}
                         </div>
                       ))}
                     </div>
@@ -566,6 +581,7 @@ function DayCard({
                   onEdit={setEditingItem}
                   onDelete={setDeletingItem}
                   compact={compact}
+                  readOnly={readOnly}
                 />
               </div>
             </motion.div>
@@ -626,6 +642,7 @@ interface SalesListProps {
 }
 
 export default function SalesList({ sessions, expenses = [], categories, compact = false }: SalesListProps) {
+  const readOnly = useIsViewingOtherSafe()
   const todayKey = useMemo(() => getTodayKey(), [])
 
   if (sessions.length === 0 && expenses.length === 0) return <EmptyState />
@@ -641,6 +658,7 @@ export default function SalesList({ sessions, expenses = [], categories, compact
           categories={categories}
           isOpenByDefault={group.dateKey === todayKey}
           compact={compact}
+          readOnly={readOnly}
         />
       ))}
     </div>

@@ -7,7 +7,13 @@ import {
   startOfYear, endOfYear,
   getClientTimeZone,
 } from '@/lib/utils'
+import { useViewAsUserIdForQuery } from '@/context/ViewAsContext'
 import type { Id } from '../../convex/_generated/dataModel'
+
+function useViewAsQueryPatch(): { viewAsUserId: Id<'users'> } | Record<string, never> {
+  const id = useViewAsUserIdForQuery()
+  return id !== undefined ? { viewAsUserId: id } : {}
+}
 
 export type SaleItem = {
   _id:         Id<'sales'>
@@ -67,82 +73,98 @@ export type CategorySalesCount = {
 
 /** All sales in a category (for category detail modal) */
 export function useSalesByCategoryId(categoryId: Id<'categories'> | null): SaleItem[] | undefined {
+  const va = useViewAsQueryPatch()
   return useQuery(
     api.sales.listByCategoryId,
-    categoryId === null ? 'skip' : { categoryId },
+    categoryId === null ? 'skip' : { categoryId, ...va },
   ) as SaleItem[] | undefined
 }
 
 /** Number of sale line items per category (for manage categories UI) */
 export function useSalesCountsByCategory(): CategorySalesCount[] | undefined {
-  return useQuery(api.sales.getCountsByCategory) as CategorySalesCount[] | undefined
+  const va = useViewAsQueryPatch()
+  return useQuery(api.sales.getCountsByCategory, { ...va }) as CategorySalesCount[] | undefined
 }
 
 /** Get sessions+items for today */
 export function useTodaySessions(): SaleSession[] | undefined {
+  const va = useViewAsQueryPatch()
   return useQuery(api.saleSessions.getForDate, {
     startOfDay: startOfDay(),
     endOfDay:   endOfDay(),
+    ...va,
   }) as SaleSession[] | undefined
 }
 
 /** Get sessions+items for the current month (for daily accordion history) */
 export function useMonthSessions(): SaleSession[] | undefined {
+  const va = useViewAsQueryPatch()
   return useQuery(api.saleSessions.getSessionsForRange, {
     startDate: startOfMonth(),
     endDate:   endOfMonth(),
+    ...va,
   }) as SaleSession[] | undefined
 }
 
 /** Get all-time sessions+items (paginated, newest first). */
 export function usePaginatedSessions(initialNumItems = 20) {
+  const va = useViewAsQueryPatch()
   return usePaginatedQuery(
     api.saleSessions.getSessionsPaginated,
-    {},
+    { ...va },
     { initialNumItems }
   )
 }
 
 /** Get sessions+items for a custom range (paginated, newest first). */
 export function usePaginatedSessionsForRange(startDate: number, endDate: number, initialNumItems = 20) {
+  const va = useViewAsQueryPatch()
   return usePaginatedQuery(
     api.saleSessions.getSessionsForRangePaginated,
-    { startDate, endDate },
+    { startDate, endDate, ...va },
     { initialNumItems }
   )
 }
 
 /** Get sessions+items for the current week (for weekly detailed list) */
 export function useWeekSessions(): SaleSession[] | undefined {
+  const va = useViewAsQueryPatch()
   return useQuery(api.saleSessions.getSessionsForRange, {
     startDate: startOfWeek(),
     endDate:   endOfWeek(),
+    ...va,
   }) as SaleSession[] | undefined
 }
 
 /** Get daily totals for the current week (for chart) */
 export function useWeeklyTotals(): DailyTotal[] | undefined {
+  const va = useViewAsQueryPatch()
   return useQuery(api.saleSessions.getDailyTotals, {
     startDate: startOfWeek(),
     endDate:   endOfWeek(),
     timeZone:  getClientTimeZone(),
+    ...va,
   }) as DailyTotal[] | undefined
 }
 
 /** Get daily totals for the current month (for chart) */
 export function useMonthlyTotals(): DailyTotal[] | undefined {
+  const va = useViewAsQueryPatch()
   return useQuery(api.saleSessions.getDailyTotals, {
     startDate: startOfMonth(),
     endDate:   endOfMonth(),
     timeZone:  getClientTimeZone(),
+    ...va,
   }) as DailyTotal[] | undefined
 }
 
 /** Get monthly totals for a specific year (for yearly chart). */
 export function useYearlyMonthlyTotals(year: number): YearlyMonthlyTotal[] | undefined {
+  const va = useViewAsQueryPatch()
   return useQuery(api.saleSessions.getYearlyMonthlyTotals, {
     year,
     timeZone: getClientTimeZone(),
+    ...va,
   }) as YearlyMonthlyTotal[] | undefined
 }
 
@@ -154,13 +176,16 @@ export function usePaginatedYearSessions(year: number, initialNumItems = 20) {
 
 /** Get available years for yearly chart picker. */
 export function useAvailableYears(): number[] | undefined {
+  const va = useViewAsQueryPatch()
   return useQuery(api.saleSessions.getAvailableYears, {
     timeZone: getClientTimeZone(),
+    ...va,
   }) as number[] | undefined
 }
 
 /** Get dashboard summary stats */
 export function useDashboardStats(): DashboardStats | undefined {
+  const va = useViewAsQueryPatch()
   return useQuery(api.saleSessions.getStats, {
     todayStart:  startOfDay(),
     todayEnd:    endOfDay(),
@@ -168,6 +193,7 @@ export function useDashboardStats(): DashboardStats | undefined {
     weekEnd:     endOfWeek(),
     monthStart:  startOfMonth(),
     monthEnd:    endOfMonth(),
+    ...va,
   }) as DashboardStats | undefined
 }
 

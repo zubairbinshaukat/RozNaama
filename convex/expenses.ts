@@ -1,19 +1,7 @@
 import { ConvexError, v } from 'convex/values'
-import { mutation, query, type MutationCtx, type QueryCtx } from './_generated/server'
+import { mutation, query } from './_generated/server'
 import { paginationOptsValidator } from 'convex/server'
-
-async function requireUser(ctx: QueryCtx | MutationCtx) {
-  const identity = await ctx.auth.getUserIdentity()
-  if (!identity) throw new ConvexError('Unauthorized')
-
-  const email = identity.email
-  if (!email) throw new ConvexError('No email on identity')
-
-  return ctx.db
-    .query('users')
-    .withIndex('by_email', (q) => q.eq('email', email))
-    .first()
-}
+import { requireUser, resolveDataUser } from './authHelpers'
 
 /** Atomically record an expense entry for a specific date */
 export const record = mutation({
@@ -43,9 +31,13 @@ export const record = mutation({
 
 /** Get all expenses for a date range (used for per-day dashboard list) */
 export const getForRange = query({
-  args: { startDate: v.number(), endDate: v.number() },
+  args: {
+    startDate:    v.number(),
+    endDate:      v.number(),
+    viewAsUserId: v.optional(v.id('users')),
+  },
   handler: async (ctx, args) => {
-    const user = await requireUser(ctx)
+    const user = await resolveDataUser(ctx, args.viewAsUserId)
     if (!user) return []
 
     return ctx.db
@@ -63,9 +55,10 @@ export const getForRange = query({
 export const getPaginated = query({
   args: {
     paginationOpts: paginationOptsValidator,
+    viewAsUserId:   v.optional(v.id('users')),
   },
   handler: async (ctx, args) => {
-    const user = await requireUser(ctx)
+    const user = await resolveDataUser(ctx, args.viewAsUserId)
     if (!user) return { page: [], isDone: true, continueCursor: '' }
 
     return ctx.db
@@ -79,12 +72,13 @@ export const getPaginated = query({
 /** Get expenses in descending date order for a date range (paginated). */
 export const getForRangePaginated = query({
   args: {
-    startDate: v.number(),
-    endDate: v.number(),
+    startDate:      v.number(),
+    endDate:        v.number(),
     paginationOpts: paginationOptsValidator,
+    viewAsUserId:   v.optional(v.id('users')),
   },
   handler: async (ctx, args) => {
-    const user = await requireUser(ctx)
+    const user = await resolveDataUser(ctx, args.viewAsUserId)
     if (!user) return { page: [], isDone: true, continueCursor: '' }
 
     return ctx.db

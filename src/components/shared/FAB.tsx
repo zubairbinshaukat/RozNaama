@@ -6,9 +6,11 @@ interface FABProps {
   onAddCategory:      () => void
   onAddSale:          () => void
   onManageCategories: () => void
+  /** When true, FAB is hidden (e.g. admin viewing another user). */
+  disabled?:          boolean
 }
 
-export default function FAB({ onAddCategory, onAddSale, onManageCategories }: FABProps) {
+export default function FAB({ onAddCategory, onAddSale, onManageCategories, disabled = false }: FABProps) {
   const [open, setOpen] = useState(false)
   const fabRef = useRef<HTMLDivElement>(null)
 
@@ -29,6 +31,8 @@ export default function FAB({ onAddCategory, onAddSale, onManageCategories }: FA
   }, [open])
 
   const handle = (fn: () => void) => () => { setOpen(false); fn() }
+
+  if (disabled) return null
 
   return (
     <>

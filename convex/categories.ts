@@ -1,28 +1,12 @@
 import { ConvexError, v } from 'convex/values'
-import { mutation, query, type MutationCtx, type QueryCtx } from './_generated/server'
-
-/**
- * Resolve current user — returns null on race condition (first sign-in).
- * Queries return empty; mutations throw.
- */
-async function requireUser(ctx: QueryCtx | MutationCtx) {
-  const identity = await ctx.auth.getUserIdentity()
-  if (!identity) throw new ConvexError('Unauthorized')
-
-  const email = identity.email
-  if (!email) throw new ConvexError('No email on identity')
-
-  return ctx.db
-    .query('users')
-    .withIndex('by_email', (q) => q.eq('email', email))
-    .first()
-}
+import { mutation, query } from './_generated/server'
+import { requireUser, resolveDataUser } from './authHelpers'
 
 /** List all categories for the current user */
 export const list = query({
-  args: {},
-  handler: async (ctx) => {
-    const user = await requireUser(ctx)
+  args: { viewAsUserId: v.optional(v.id('users')) },
+  handler: async (ctx, args) => {
+    const user = await resolveDataUser(ctx, args.viewAsUserId)
     if (!user) return []
     return ctx.db
       .query('categories')

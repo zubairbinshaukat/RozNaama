@@ -58,6 +58,8 @@ Both are required. If missing, the app shows a setup instructions page instead o
 
 Required for auth: without it, `ctx.auth.getUserIdentity()` is null and Convex functions throw `Unauthorized`.
 
+**Admin “Access” (view other users):** Convex checks `public_metadata.role === "Admin"` on the JWT (`convex/authHelpers.ts`). Ensure the [Clerk JWT template for Convex](https://clerk.com/docs/backend-requests/jwt-templates) includes **`public_metadata`** (or **`publicMetadata`**) so server-side admin checks match `user.publicMetadata` in the app.
+
 ---
 
 ## Architecture

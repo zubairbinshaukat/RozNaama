@@ -1,7 +1,8 @@
 import { ConvexError, v } from 'convex/values'
-import { mutation, query, type MutationCtx, type QueryCtx } from './_generated/server'
+import { mutation, query } from './_generated/server'
 import type { Id } from './_generated/dataModel'
 import { paginationOptsValidator } from 'convex/server'
+import { requireUser, resolveDataUser } from './authHelpers'
 
 /** YYYY-MM-DD in the given IANA zone (matches browser local keys when zones align). */
 function dateKeyInTimeZone(ms: number, timeZone: string): string {
@@ -40,25 +41,6 @@ function yearInTimeZone(ms: number, timeZone: string): number {
     // Fall through to UTC/local fallback below.
   }
   return new Date(ms).getFullYear()
-}
-
-/**
- * Resolve the current user from Clerk identity.
- * Returns null (instead of throwing) when user not yet in DB —
- * handles the race condition on first sign-in where upsertUser
- * hasn't completed before dashboard queries fire.
- */
-async function requireUser(ctx: QueryCtx | MutationCtx) {
-  const identity = await ctx.auth.getUserIdentity()
-  if (!identity) throw new ConvexError('Unauthorized')
-
-  const email = identity.email
-  if (!email) throw new ConvexError('No email on identity')
-
-  return ctx.db
-    .query('users')
-    .withIndex('by_email', (q) => q.eq('email', email))
-    .first()
 }
 
 const saleItemValidator = v.object({
@@ -110,11 +92,12 @@ export const record = mutation({
 /** Get sessions + items for today */
 export const getForDate = query({
   args: {
-    startOfDay: v.number(),
-    endOfDay:   v.number(),
+    startOfDay:   v.number(),
+    endOfDay:     v.number(),
+    viewAsUserId: v.optional(v.id('users')),
   },
   handler: async (ctx, args) => {
-    const user = await requireUser(ctx)
+    const user = await resolveDataUser(ctx, args.viewAsUserId)
     if (!user) return []
 
     const sessions = await ctx.db
@@ -141,11 +124,12 @@ export const getForDate = query({
 /** Get sessions + items for a date range (multi-day view, weekly/monthly detail) */
 export const getSessionsForRange = query({
   args: {
-    startDate: v.number(),
-    endDate:   v.number(),
+    startDate:    v.number(),
+    endDate:      v.number(),
+    viewAsUserId: v.optional(v.id('users')),
   },
   handler: async (ctx, args) => {
-    const user = await requireUser(ctx)
+    const user = await resolveDataUser(ctx, args.viewAsUserId)
     if (!user) return []
 
     const sessions = await ctx.db
@@ -173,9 +157,10 @@ export const getSessionsForRange = query({
 export const getSessionsPaginated = query({
   args: {
     paginationOpts: paginationOptsValidator,
+    viewAsUserId:   v.optional(v.id('users')),
   },
   handler: async (ctx, args) => {
-    const user = await requireUser(ctx)
+    const user = await resolveDataUser(ctx, args.viewAsUserId)
     if (!user) return { page: [], isDone: true, continueCursor: '' }
 
     const page = await ctx.db
@@ -204,12 +189,13 @@ export const getSessionsPaginated = query({
 /** Get sessions + items in descending date order for a date range (paginated). */
 export const getSessionsForRangePaginated = query({
   args: {
-    startDate: v.number(),
-    endDate: v.number(),
+    startDate:      v.number(),
+    endDate:        v.number(),
     paginationOpts: paginationOptsValidator,
+    viewAsUserId:   v.optional(v.id('users')),
   },
   handler: async (ctx, args) => {
-    const user = await requireUser(ctx)
+    const user = await resolveDataUser(ctx, args.viewAsUserId)
     if (!user) return { page: [], isDone: true, continueCursor: '' }
 
     const page = await ctx.db
@@ -240,12 +226,13 @@ export const getSessionsForRangePaginated = query({
 /** Get daily totals for a date range (for charts) */
 export const getDailyTotals = query({
   args: {
-    startDate: v.number(),
-    endDate:   v.number(),
-    timeZone:  v.string(),
+    startDate:    v.number(),
+    endDate:      v.number(),
+    timeZone:     v.string(),
+    viewAsUserId: v.optional(v.id('users')),
   },
   handler: async (ctx, args) => {
-    const user = await requireUser(ctx)
+    const user = await resolveDataUser(ctx, args.viewAsUserId)
     if (!user) return []
 
     const tz = args.timeZone.trim() || 'UTC'
@@ -293,15 +280,16 @@ export const getDailyTotals = query({
 /** Get dashboard summary stats */
 export const getStats = query({
   args: {
-    todayStart:  v.number(),
-    todayEnd:    v.number(),
-    weekStart:   v.number(),
-    weekEnd:     v.number(),
-    monthStart:  v.number(),
-    monthEnd:    v.number(),
+    todayStart:   v.number(),
+    todayEnd:     v.number(),
+    weekStart:    v.number(),
+    weekEnd:      v.number(),
+    monthStart:   v.number(),
+    monthEnd:     v.number(),
+    viewAsUserId: v.optional(v.id('users')),
   },
   handler: async (ctx, args) => {
-    const user = await requireUser(ctx)
+    const user = await resolveDataUser(ctx, args.viewAsUserId)
     if (!user) return {
       todayTotal: 0, todayCount: 0,
       todaySalesTotal: 0, todayNetTotal: 0,
@@ -447,11 +435,12 @@ export const getStats = query({
 /** Get monthly totals for a selected year; includes sales and net values per month. */
 export const getYearlyMonthlyTotals = query({
   args: {
-    year: v.number(),
-    timeZone: v.string(),
+    year:         v.number(),
+    timeZone:     v.string(),
+    viewAsUserId: v.optional(v.id('users')),
   },
   handler: async (ctx, args) => {
-    const user = await requireUser(ctx)
+    const user = await resolveDataUser(ctx, args.viewAsUserId)
     if (!user) {
       return Array.from({ length: 12 }, (_, monthIndex) => ({
         monthIndex,
@@ -497,10 +486,11 @@ export const getYearlyMonthlyTotals = query({
 /** Return selectable years based on available sales/expense data. */
 export const getAvailableYears = query({
   args: {
-    timeZone: v.string(),
+    timeZone:     v.string(),
+    viewAsUserId: v.optional(v.id('users')),
   },
   handler: async (ctx, args) => {
-    const user = await requireUser(ctx)
+    const user = await resolveDataUser(ctx, args.viewAsUserId)
     const tz = args.timeZone.trim() || 'UTC'
     const currentYear = yearInTimeZone(Date.now(), tz)
 

@@ -2,7 +2,13 @@ import { useMutation, usePaginatedQuery, useQuery } from 'convex/react'
 import { api } from '../../convex/_generated/api'
 import { startOfDay, endOfDay, startOfWeek, endOfWeek, startOfMonth, endOfMonth } from '@/lib/utils'
 import { startOfYear, endOfYear } from '@/lib/utils'
+import { useViewAsUserIdForQuery } from '@/context/ViewAsContext'
 import type { Id } from '../../convex/_generated/dataModel'
+
+function useViewAsQueryPatch(): { viewAsUserId: Id<'users'> } | Record<string, never> {
+  const id = useViewAsUserIdForQuery()
+  return id !== undefined ? { viewAsUserId: id } : {}
+}
 
 export type ExpenseEntry = {
   _id:         Id<'expenses'>
@@ -14,7 +20,8 @@ export type ExpenseEntry = {
 }
 
 export function useExpensesForRange(startDate: number, endDate: number): ExpenseEntry[] | undefined {
-  return useQuery(api.expenses.getForRange, { startDate, endDate }) as ExpenseEntry[] | undefined
+  const va = useViewAsQueryPatch()
+  return useQuery(api.expenses.getForRange, { startDate, endDate, ...va }) as ExpenseEntry[] | undefined
 }
 
 export function useTodayExpenses(): ExpenseEntry[] | undefined {
@@ -31,18 +38,20 @@ export function useMonthExpenses(): ExpenseEntry[] | undefined {
 
 /** Get all-time expenses (paginated, newest first). */
 export function usePaginatedExpenses(initialNumItems = 20) {
+  const va = useViewAsQueryPatch()
   return usePaginatedQuery(
     api.expenses.getPaginated,
-    {},
+    { ...va },
     { initialNumItems }
   )
 }
 
 /** Get expenses for custom range (paginated, newest first). */
 export function usePaginatedExpensesForRange(startDate: number, endDate: number, initialNumItems = 20) {
+  const va = useViewAsQueryPatch()
   return usePaginatedQuery(
     api.expenses.getForRangePaginated,
-    { startDate, endDate },
+    { startDate, endDate, ...va },
     { initialNumItems }
   )
 }

@@ -74,9 +74,11 @@ interface SummaryCardsProps {
   stats:     DashboardStats | undefined
   activeTab: 'daily' | 'weekly' | 'monthly' | 'yearly'
   onAddExpense?: () => void
+  /** Hide expense shortcut when admin is viewing another user. */
+  readOnly?: boolean
 }
 
-export default function SummaryCards({ stats, activeTab, onAddExpense }: SummaryCardsProps) {
+export default function SummaryCards({ stats, activeTab, onAddExpense, readOnly = false }: SummaryCardsProps) {
   if (!stats) {
     return (
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
@@ -103,11 +105,15 @@ export default function SummaryCards({ stats, activeTab, onAddExpense }: Summary
         icon:     <Receipt className="text-destructive" size={18} strokeWidth={1.5} />,
         label:    'After Expense',
         value:    formatAmount(stats.todayNetTotal),
-        subLabel: stats.todayExpenseCount === 0
-          ? `${formatAmount(stats.todaySalesTotal)} - 0 (tap to add)`
-          : `${formatAmount(stats.todaySalesTotal)} - ${formatAmount(stats.todayExpenseTotal)}`,
+        subLabel: readOnly
+          ? stats.todayExpenseCount === 0
+            ? `${formatAmount(stats.todaySalesTotal)} - 0`
+            : `${formatAmount(stats.todaySalesTotal)} - ${formatAmount(stats.todayExpenseTotal)}`
+          : stats.todayExpenseCount === 0
+            ? `${formatAmount(stats.todaySalesTotal)} - 0 (tap to add)`
+            : `${formatAmount(stats.todaySalesTotal)} - ${formatAmount(stats.todayExpenseTotal)}`,
         accent:   'bg-destructive/10',
-        onClick:  onAddExpense,
+        onClick:  readOnly ? undefined : onAddExpense,
       },
       {
         icon:     <Hash className="text-emerald-500" size={18} strokeWidth={1.5} />,

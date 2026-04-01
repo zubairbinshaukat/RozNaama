@@ -17,6 +17,8 @@ import AddExpenseModal      from '@/components/modals/AddExpenseModal'
 import ManageCategoriesModal from '@/components/modals/ManageCategoriesModal'
 import IOSInstallModal      from '@/components/modals/IOSInstallModal'
 import { useDashboardStats } from '@/hooks/useSales'
+import { useViewAs } from '@/context/ViewAsContext'
+import AdminAccessDialog from '@/components/dashboard/AdminAccessDialog'
 import { useHorizontalTabSwipe } from '@/hooks/useHorizontalTabSwipe'
 import { useMediaQueryMatch } from '@/hooks/useMediaQueryMatch'
 
@@ -101,6 +103,7 @@ export default function Dashboard() {
   const [showIOSInstallModal,   setShowIOSInstallModal]   = useState(false)
 
   const stats = useDashboardStats()
+  const { isViewingOther, viewAsName } = useViewAs()
   const tabSwipeRef = useRef<HTMLDivElement>(null)
   const mobileLayout = useMediaQueryMatch('(max-width: 639px)')
   const reduceMotion = useMediaQueryMatch('(prefers-reduced-motion: reduce)')
@@ -156,10 +159,18 @@ export default function Dashboard() {
       {/* ── Main content ─────────────────────────────────────────────────── */}
       <main className="mx-auto px-4 sm:px-6 py-6 pb-28 max-w-5xl">
         <section aria-label="Greeting" className="mb-6">
-          <p className="text-[0.9375rem] sm:text-lg leading-snug">
-            <span className="text-muted-foreground font-medium">{getGreeting()}, </span>
-            <span className="font-logo font-semibold text-gradient-brand">{displayName}</span>
-          </p>
+          <div className="flex items-start justify-between gap-3">
+            <p className="text-[0.9375rem] sm:text-lg leading-snug min-w-0 flex-1">
+              <span className="text-muted-foreground font-medium">{getGreeting()}, </span>
+              <span className="font-logo font-semibold text-gradient-brand">{displayName}</span>
+            </p>
+            <AdminAccessDialog />
+          </div>
+          {isViewingOther && viewAsName && (
+            <p className="text-xs text-muted-foreground mt-2">
+              Viewing {viewAsName}&apos;s data — recording and edits are disabled.
+            </p>
+          )}
         </section>
 
         {/* PWA Install CTA (only when not installed) */}
@@ -189,7 +200,12 @@ export default function Dashboard() {
 
         {/* Summary cards — tab aware */}
         <section aria-label="Summary" className="mb-6">
-          <SummaryCards stats={stats} activeTab={activeTab} onAddExpense={() => setShowExpenseModal(true)} />
+          <SummaryCards
+            stats={stats}
+            activeTab={activeTab}
+            onAddExpense={() => setShowExpenseModal(true)}
+            readOnly={isViewingOther}
+          />
         </section>
 
         {/* Tab bar */}
@@ -243,6 +259,7 @@ export default function Dashboard() {
 
       {/* ── FAB ──────────────────────────────────────────────────────────── */}
       <FAB
+        disabled={isViewingOther}
         onAddCategory={() => setShowCategoryModal(true)}
         onAddSale={()     => setShowSaleModal(true)}
         onManageCategories={() => setShowManageCategoriesModal(true)}

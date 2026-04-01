@@ -1,5 +1,6 @@
 import { useQuery, useMutation } from 'convex/react'
 import { api } from '../../convex/_generated/api'
+import { useViewAsUserIdForQuery } from '@/context/ViewAsContext'
 import type { Id } from '../../convex/_generated/dataModel'
 
 export type Category = {
@@ -12,7 +13,10 @@ export type Category = {
 
 /** Returns the current user's categories, or undefined while loading */
 export function useCategories(): Category[] | undefined {
-  return useQuery(api.categories.list) as Category[] | undefined
+  const viewAsUserId = useViewAsUserIdForQuery()
+  return useQuery(api.categories.list, {
+    ...(viewAsUserId !== undefined ? { viewAsUserId } : {}),
+  }) as Category[] | undefined
 }
 
 /** Returns a mutation to create a category */
