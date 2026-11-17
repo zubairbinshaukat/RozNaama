@@ -31,10 +31,24 @@ export async function findApplied(
     .first()
 }
 
+/** The id(s) a replay of `kind` returns must be present on the stored row. */
+function hasStoredTarget(row: Doc<'clientRequests'>, kind: ClientRequestKind): boolean {
+  switch (kind) {
+    case 'sale':
+      return row.sessionId !== undefined
+    case 'expense':
+      return row.expenseId !== undefined
+    case 'khataSale':
+    case 'khataAdvance':
+      return row.khataEntryId !== undefined
+    case 'khataPayment':
+      return row.khataEntryId !== undefined && row.khataPaymentId !== undefined
+  }
+}
+
 /** A hit of another kind (or a malformed row) is a client bug: never apply or return it. */
 export function assertAppliedKind(row: Doc<'clientRequests'>, kind: ClientRequestKind): void {
-  const hasTarget = kind === 'sale' ? row.sessionId !== undefined : row.expenseId !== undefined
-  if (row.kind !== kind || !hasTarget) {
+  if (row.kind !== kind || !hasStoredTarget(row, kind)) {
     throw validationError('clientRequestId was already used for a different entry')
   }
 }

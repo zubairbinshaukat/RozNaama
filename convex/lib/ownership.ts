@@ -5,7 +5,14 @@ import { notFoundError } from './errors'
 type ReadCtx = QueryCtx | MutationCtx
 
 /** Tables whose rows carry an owning `userId`. */
-export type OwnedTable = 'categories' | 'saleSessions' | 'sales' | 'expenses'
+export type OwnedTable =
+  | 'categories'
+  | 'saleSessions'
+  | 'sales'
+  | 'expenses'
+  | 'customers'
+  | 'khataEntries'
+  | 'khataPayments'
 
 /** Load `id` from `table` if it exists AND belongs to `userId`; otherwise null. */
 export async function getOwned<T extends OwnedTable>(

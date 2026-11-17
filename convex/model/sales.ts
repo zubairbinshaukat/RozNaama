@@ -20,6 +20,7 @@ import {
 } from '../lib/validation'
 import { assertOwnedCategory, requireOwned } from '../lib/ownership'
 import { assertAppliedKind, findApplied, recordApplied } from './idempotency'
+import { guardSessionEdit, sessionHasLinks, syncDeliveryTotal } from './khataLinks'
 import { totalsOnSaleChange, totalsOnSessionChange } from './totals'
 
 // ─── Tier 2 totals hooks ────────────────────────────────────────────────────
@@ -260,17 +261,33 @@ export type UpdateSaleItemInput = {
   saleDate?:   number
 }
 
+export type UpdateSaleItemOptions = {
+  /** Khata's own edits of a delivery session (khata.updateEntry): no lock, no total sync. */
+  skipKhataGuard?: boolean
+}
+
 /**
  * Edit one sale line item. A changed `saleDate` moves it into the session
- * with exactly that sessionDate (created if missing); the old session is
- * decremented or deleted. Only changed fields are validated.
+ * with exactly that sessionDate (created if missing; never a khata session);
+ * the old session is decremented or deleted. Only changed fields are validated.
+ * Sessions linked to khata are guarded (model/khataLinks.guardSessionEdit) and
+ * a delivery session's new total is copied to its khata entry.
  */
 export async function updateSaleItem(
   ctx: MutationCtx,
   userId: Id<'users'>,
   input: UpdateSaleItemInput,
+  options: UpdateSaleItemOptions = {},
 ): Promise<void> {
   const sale = await requireOwned(ctx, 'sales', input.saleId, userId, 'Sale not found')
+
+  const deliveryLink = options.skipKhataGuard
+    ? null
+    : await guardSessionEdit(ctx, userId, sale.sessionId, {
+      dateChanged:      input.saleDate !== undefined && input.saleDate !== sale.saleDate,
+      amountChanged:    !Object.is(input.amount, sale.amount),
+      removingLastItem: false,
+    })
 
   const trimmedName = input.productName.trim()
   const productName =
@@ -297,13 +314,16 @@ export async function updateSaleItem(
 
     await detachFromSession(ctx, userId, sale.sessionId, sale.amount)
 
-    // User-scoped lookup: only ever joins one of the caller's own sessions.
-    const target = await ctx.db
+    // User-scoped lookup: only ever joins one of the caller's own sessions,
+    // and never a khata session (its total belongs to a khata entry).
+    const candidate = await ctx.db
       .query('saleSessions')
       .withIndex('by_userId_sessionDate', (q) =>
         q.eq('userId', userId).eq('sessionDate', newDate),
       )
       .first()
+    const target =
+      candidate && !(await sessionHasLinks(ctx, userId, candidate._id)) ? candidate : null
 
     let newSessionId: Id<'saleSessions'>
     if (target) {
@@ -344,6 +364,7 @@ export async function updateSaleItem(
         totalAmount: Math.max(0, session.totalAmount + diff),
       })
     }
+    if (deliveryLink) await syncDeliveryTotal(ctx, userId, deliveryLink)
   }
 }
 
@@ -376,6 +397,55 @@ export async function removeSaleItem(
   saleId: Id<'sales'>,
 ): Promise<void> {
   const sale = await requireOwned(ctx, 'sales', saleId, userId, 'Sale not found')
+  const deliveryLink = await guardSessionEdit(ctx, userId, sale.sessionId, {
+    dateChanged:      false,
+    amountChanged:    true,
+    removingLastItem: async () => {
+      const session = await getOwnSession(ctx, sale.sessionId, userId)
+      return !session || session.itemCount <= 1
+    },
+  })
   await deleteSale(ctx, sale)
   await detachFromSession(ctx, userId, sale.sessionId, sale.amount)
+  if (deliveryLink) await syncDeliveryTotal(ctx, userId, deliveryLink)
+}
+
+/** Max sale rows deleted with one session (sessions hold ≤ MAX_SALE_ITEMS on new writes). */
+const SESSION_ITEMS_DELETE_LIMIT = 500
+
+/**
+ * Delete one of the user's sessions with all its line items (hooks fire for
+ * each row). No khata guard: khata uses it for its own sessions and removes
+ * the links itself. No-op when the session is missing or not the user's.
+ */
+export async function removeSessionWithItems(
+  ctx: MutationCtx,
+  userId: Id<'users'>,
+  sessionId: Id<'saleSessions'>,
+): Promise<void> {
+  const session = await getOwnSession(ctx, sessionId, userId)
+  if (!session) return
+  const items = await ctx.db
+    .query('sales')
+    .withIndex('by_sessionId', (q) => q.eq('sessionId', sessionId))
+    .take(SESSION_ITEMS_DELETE_LIMIT)
+  for (const item of items) {
+    if (item.userId === userId) await deleteSale(ctx, item)
+  }
+  await deleteSession(ctx, session)
+}
+
+/** The user's session with its line items (bounded), or null. */
+export async function getSessionWithItems(
+  ctx: MutationCtx,
+  userId: Id<'users'>,
+  sessionId: Id<'saleSessions'>,
+): Promise<{ session: Doc<'saleSessions'>; items: Doc<'sales'>[] } | null> {
+  const session = await getOwnSession(ctx, sessionId, userId)
+  if (!session) return null
+  const items = await ctx.db
+    .query('sales')
+    .withIndex('by_sessionId', (q) => q.eq('sessionId', sessionId))
+    .take(SESSION_ITEMS_DELETE_LIMIT)
+  return { session, items: items.filter((i) => i.userId === userId) }
 }

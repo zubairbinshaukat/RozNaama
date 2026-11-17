@@ -21,6 +21,27 @@ export function appError(code: ErrorCode, message: string): ConvexError<AppError
   return new ConvexError<AppErrorData>({ code, message })
 }
 
+/** Plain-language khata messages (shown as-is by the UI). `X` amounts are "PKR 1,234". */
+export const KHATA_MESSAGES = {
+  PAYMENT_LOCK:      'This is an Udhaar/Advance payment. Change it in Khata.',
+  DELIVERY_LOCK:     'This sale is linked to Udhaar/Advance. Cancel it from Khata.',
+  KHATA_OFF_LOCK:    'Turn on Advance & Udhaar in Settings to change it.',
+  FULLY_PAID:        'Fully paid, save as normal sale',
+  BILL_BELOW_ADVANCE: "Bill can't be less than advance. Use Cancel & refund.",
+  EDIT_ITEMS_IN_SALE: 'Edit the items in the sale',
+  ENTRY_NOT_FOUND:   'Record not found',
+  ENTRY_CANCELLED:   'This record was cancelled',
+  ENTRY_CLOSED:      'This record is already closed',
+  ALREADY_PAID:      'Already fully paid',
+  NOT_BOOKED:        'This is not an open advance',
+  NOT_DUE:           'There is no Baqi to forgive',
+  PAYMENT_NOT_FOUND: 'Payment not found',
+  CUSTOMER_NOT_FOUND: 'Customer not found',
+  CUSTOMER_EXISTS:   'Another customer already has this name',
+  TOO_MANY_PAYMENTS: 'This record has too many payments',
+  BEFORE_OPENED:     "Date can't be before the record started",
+} as const
+
 /** Legacy message texts are kept so older clients still recognise them. */
 export const unauthorizedError = () => appError(ERROR_CODES.UNAUTHORIZED, 'Unauthorized')
 export const forbiddenError = () => appError(ERROR_CODES.FORBIDDEN, 'Forbidden')

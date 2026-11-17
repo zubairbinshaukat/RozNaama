@@ -64,6 +64,71 @@ export const categoryCount = v.object({
   count:      v.number(),
 })
 
+// ─── Advance & Udhaar (Khata) ───────────────────────────────────────────────
+
+export const recognitionValidator = v.union(v.literal('delivery'), v.literal('cash'))
+export const khataStatusValidator = v.union(
+  v.literal('booked'), v.literal('due'), v.literal('settled'), v.literal('cancelled'),
+)
+export const khataKindValidator = v.union(v.literal('advance'), v.literal('udhaar'))
+
+/** settings.get / settings.update result. */
+export const shopSettingsValue = v.object({
+  khataEnabled:       v.boolean(),
+  advanceRecognition: recognitionValidator,
+  udhaarRecognition:  recognitionValidator,
+  updatedAt:          v.number(),
+})
+
+export const customerDoc = doc(schema, 'customers')
+export const khataEntryDoc = doc(schema, 'khataEntries')
+export const khataPaymentDoc = doc(schema, 'khataPayments')
+
+/** khata.getTotals result. */
+export const khataTotalsValue = v.object({
+  dueTotal:  v.number(),
+  dueCount:  v.number(),
+  heldTotal: v.number(),
+  heldCount: v.number(),
+})
+
+/**
+ * An entry plus its computed `remaining` (PKR): total − paid − forgiven, or
+ * null for an advance without a total yet.
+ */
+export const khataEntryWithRemaining = v.object({
+  ...khataEntryDoc.fields,
+  remaining: v.union(v.number(), v.null()),
+})
+
+/** khata.listOpen row: entry + remaining + joined customer name/phone. */
+export const khataOpenRow = v.object({
+  ...khataEntryDoc.fields,
+  remaining:     v.union(v.number(), v.null()),
+  customerName:  v.string(),
+  customerPhone: v.optional(v.string()),
+})
+
+/** khata.customerDetail entry: entry + remaining + its payments (newest first). */
+export const khataDetailEntry = v.object({
+  ...khataEntryDoc.fields,
+  remaining:      v.union(v.number(), v.null()),
+  payments:       v.array(khataPaymentDoc),
+  paymentsCapped: v.boolean(),
+})
+
+/** khata.badgesForRange row. */
+export const khataBadge = v.object({
+  saleSessionId: v.id('saleSessions'),
+  role:          v.union(v.literal('delivery'), v.literal('payment')),
+  entryId:       v.id('khataEntries'),
+  customerId:    v.id('customers'),
+  kind:          khataKindValidator,
+  status:        khataStatusValidator,
+  remaining:     v.union(v.number(), v.null()),
+  customerName:  v.string(),
+})
+
 /** Pagination result for `item` (accepts the `{ page: [], isDone: true, continueCursor: '' }` empty shape). */
 export function paginated<T extends Validator<Value, 'required', string>>(item: T) {
   return paginationResultValidator(item)

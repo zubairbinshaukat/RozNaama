@@ -42,6 +42,26 @@ export const CLIENT_REQUEST_ID_RE = /^[A-Za-z0-9_-]{16,64}$/
 /** How long applied clientRequestIds are remembered (replays older than this would re-apply). */
 export const CLIENT_REQUEST_RETENTION_MS = 180 * 24 * 60 * 60 * 1000
 
+// ─── Advance & Udhaar (Khata) ───────────────────────────────────────────────
+
+/** Max characters for a customer name (after trimming / collapsing spaces). */
+export const CUSTOMER_NAME_MAX = 40
+
+/** Max characters for a customer phone (digits and an optional leading '+'). */
+export const PHONE_MAX = 20
+
+/** Max characters for a khata item label ("Suit stitching"). */
+export const KHATA_ITEM_LABEL_MAX = 80
+
+/** Max payments (incl. refunds) per khata entry. */
+export const MAX_KHATA_PAYMENTS_PER_ENTRY = 200
+
+/** A due date may be at most this far ahead of server "now" (2 years). */
+export const DUE_DATE_MAX_AHEAD_MS = 2 * 366 * 24 * 60 * 60 * 1000
+
+/** Max customers returned by khata.searchCustomers. */
+export const CUSTOMER_SEARCH_MAX = 20
+
 /** Color swatches for categories (UI palette and server-side allow-list). */
 export const CATEGORY_COLORS = [
   '#6366F1',  // indigo

@@ -61,9 +61,8 @@ Both are required. If missing, the app shows a setup instructions page instead o
 
 `CLERK_JWT_ISSUER_DOMAIN` is required for auth: without it, `ctx.auth.getUserIdentity()` is null and Convex functions throw `Unauthorized`.
 
-| `ADMIN_EMAILS` | Comma-separated admin emails (trimmed, case-insensitive). Unset = nobody is admin. |
 
-**Admin (dashboard at `/admin` + “Access / View as”):** admin = the caller's JWT `email` is listed in `ADMIN_EMAILS` and the `email_verified` claim is not `false` (`isAdminFromIdentity`, `convex/model/users.ts`). Clerk roles / `public_metadata` are no longer consulted. The frontend asks `users.getMyAccess` (`src/hooks/useAdminAccess.ts`); every admin function re-checks on the server (`adminQuery`).
+**Admin (dashboard at `/admin` + “Access / View as”):** admin = Clerk role `"Admin"` in the JWT claims: top-level `role`, `public_metadata.role` / `publicMetadata.role`, or a namespaced `…/public_metadata` claim (`isAdminFromIdentity`, `convex/model/users.ts`, the single check). Set it in Clerk → Users → user → Metadata → Public: `{ "role": "Admin" }`, and make sure the [Clerk JWT template for Convex](https://clerk.com/docs/backend-requests/jwt-templates) includes **`public_metadata`** (e.g. `"public_metadata": "{{user.public_metadata}}"`). The frontend asks `users.getMyAccess` (`src/hooks/useAdminAccess.ts`), never Clerk metadata directly; every admin function re-checks on the server (`adminQuery`).
 
 ---
 
@@ -99,8 +98,19 @@ Both are required. If missing, the app shows a setup instructions page instead o
 
 ### Admin dashboard
 - Route `/admin/*` (lazy `src/pages/Admin.tsx`, components in `src/components/admin/`) shares one `ProtectedRoute` + `ViewAsProvider` layout with `/dashboard`. `AdminGuard` renders it only after `getMyAccess` says yes, so the chunk never loads for shopkeepers; it is also excluded from the SW precache (`vite.config.ts` `globIgnores`).
-- Backend `convex/admin.ts` (read-only, `adminQuery`): `overview` (one row per user, paginated; the client sums every page), `listUsers` (paginated, `search`, server sorts `newest | oldest | name`), `getUser`. Helpers in `convex/model/adminStats.ts`: summary tables when ready, else capped scans flagged `partial`.
+- Backend `convex/admin.ts` (read-only, `adminQuery`): `overview` (one row per user, paginated; the client sums every page), `listUsers` (paginated, `search`, server sorts `newest | oldest | name`), `getUser`, `watchSummaries` (≤ 20 user ids → latest record, today / Monday-week / month sales + expenses; bad or deleted ids skipped). Helpers in `convex/model/adminStats.ts`: summary tables when ready, else capped scans flagged `partial`.
+- Admin home: compact platform strip, then tabs **Watchlist** (users the admin picked, `?tab` absent) / **All users** (`?tab=all`). The watchlist is per admin in `localStorage` (`roznaama-admin-watchlist:<clerkUserId>`, `src/lib/admin.ts`); it can move to a server table later. Card **Access** = the same view-as flow as the dashboard dialog (`src/components/admin/useImpersonate.ts`).
 - A selected user's KPI cards / charts reuse the normal per-user queries via `ViewAsOverride` (`src/context/ViewAsContext.tsx`), which scopes `viewAsUserId` for a subtree without changing the app-wide view-as.
+
+### Advance & Udhaar (Khata)
+- Opt-in per shop: `shopSettings` (`settings.get` / `settings.update`). No row = off, both recognitions `'delivery'`. `settings.get` is the only khata-related query that always runs; the UI mounts khata queries only when `khataEnabled`. Mutations work regardless of the setting (queued offline writes still apply).
+- Tables: `customers` (stored `dueTotal` / `heldTotal` / `openCount`), `khataEntries` (`kind` `advance|udhaar`, `status` `booked|due|settled|cancelled`, frozen `recognition`), `khataPayments` (`payment|refund`), `khataSessionLinks` (sale session ↔ entry, `role` `delivery|payment`), `khataTotals` (one row per user).
+- Recognition: `'delivery'` = the full bill is one sale on the sale / handover day (delivery link), payments make no sales. `'cash'` = every payment is a 1-item sale "Ali · Udhaar" / "Ali · Advance" on its day (payment link); a cash refund is an expense "Advance refund · Ali".
+- All sales effects go through `model/sales` (`recordSaleSession`, `updateSaleItem(…, { skipKhataGuard })`, `removeSessionWithItems`) and `model/expenses`, so the summary tables stay "summary == recompute". Never write `saleSessions` / `sales` / summary tables from khata code directly.
+- Every `khataEntries` write goes through `insertEntry` / `patchEntry` / `deleteEntry` (`convex/model/khataBalance.ts`), which patch the customer + `khataTotals` in the same mutation. Money is compared in paisa (`toPaisa`); new amounts must have ≤ 2 decimals (`assertMoney`).
+- Sale-edit guard: `updateSaleItem` / `removeSaleItem` call `guardSessionEdit` (`convex/model/khataLinks.ts`, one indexed read, no-op without links). Payment link → every edit blocked; delivery link → date change and last-item delete blocked, other edits allowed and `syncDeliveryTotal` copies the session total to the entry (rejected below paid). With khata off the message is "Turn on Advance & Udhaar in Settings to change it." A date move never joins a khata session.
+- `model/khataLinks` must not import `model/sales` (sales imports it). Messages: `KHATA_MESSAGES` in `convex/lib/errors.ts`.
+- Repair: internal `khata:verifyUser` (read-only) / `khata:rebuildUser`.
 
 ### Theme system
 - Three themes: `light` (default), `dark`, `midnight`
@@ -141,6 +151,11 @@ Both are required. If missing, the app shows a setup instructions page instead o
 | `convex/totals.ts` | Internal `rebuildUserTotals`, `rebuildMonth`, `verifyUserTotals`, `status` |
 | `convex/migrations.ts` | `@convex-dev/migrations` runner + the 3 backfill migrations |
 | `convex/audit.ts` | Read-only data audit (`audit:run`) |
+| `convex/settings.ts` + `convex/model/settings.ts` | Shop settings (khata opt-in, recognition modes) |
+| `convex/khata.ts` | Khata queries/mutations + internal `verifyUser` / `rebuildUser` |
+| `convex/model/khata.ts` | Khata write logic (customers, entries, payments; uses model/sales + model/expenses) |
+| `convex/model/khataBalance.ts` | Paisa math, entry write primitives + aggregate hook, verify/rebuild |
+| `convex/model/khataLinks.ts` | Session links, `guardSessionEdit`, `syncDeliveryTotal` (no model/sales import) |
 | `docs/convex-v2-rollout.md` | Deploy / backfill / rollback runbook |
 
 ---
@@ -175,7 +190,7 @@ All Convex functions (query/mutation) must:
 4. Validate NEW writes / CHANGED fields with `convex/lib/validation.ts` + `convex/lib/limits.ts`. Never validate on reads (prod has legacy rows).
 5. Use table-first DB calls (`ctx.db.get('sales', id)`), add `returns` validators (`convex/lib/returnValidators.ts`), keep existing names/args/return shapes backward compatible (only add optional args).
 6. Time-zone math lives in `convex/lib/time.ts`.
-7. Idempotent creates: `saleSessions.record` / `expenses.record` take an optional `clientRequestId` (`CLIENT_REQUEST_ID_RE`, a `crypto.randomUUID()` fits). `convex/model/idempotency.ts` looks it up in the `clientRequests` ledger BEFORE any write; a hit returns the stored result and writes nothing (no totals hooks), a miss inserts + runs hooks + records the ledger row in the same mutation. Same id with the other kind → `VALIDATION`. No id → old behaviour, ledger untouched. Any new create that the offline outbox may replay must follow this pattern. Old ledger rows: internal `clientRequests:pruneClientRequests` (180 days, run by hand).
+7. Idempotent creates: `saleSessions.record` / `expenses.record` / `khata.recordSale` / `khata.openAdvance` / `khata.receivePayment` take an optional `clientRequestId` (`CLIENT_REQUEST_ID_RE`, a `crypto.randomUUID()` fits). `convex/model/idempotency.ts` looks it up in the `clientRequests` ledger BEFORE any write; a hit returns the stored result and writes nothing (no totals hooks), a miss inserts + runs hooks + records the ledger row in the same mutation. Same id with another kind (`sale | expense | khataSale | khataAdvance | khataPayment`) → `VALIDATION`. No id → old behaviour, ledger untouched. Any new create that the offline outbox may replay must follow this pattern. Old ledger rows: internal `clientRequests:pruneClientRequests` (180 days, run by hand).
 
 `convex/_generated/` is hand-maintained in codegen style until the next `npx convex dev`: when adding a module, add it to `convex/_generated/api.d.ts`.
 
@@ -184,6 +199,7 @@ All Convex functions (query/mutation) must:
 - `npm test` runs two Vitest projects (`vitest.config.ts`): `convex` (edge-runtime, `tests/convex/**/*.test.ts`, convex-test) and `frontend` (jsdom, `src/**/*.test.{ts,tsx}`, TZ=Asia/Karachi).
 - Convex tests live in `tests/convex/` (never inside `convex/`). Use `makeT()`, `IDENTITIES`, `signIn`, `signInAndUpsert`, `freezeNow` from `tests/convex/setup.ts`.
 - Totals changes need a "summary tables == recompute" check (see `tests/convex/totals.test.ts`, `totalsFixtures.ts`).
+- Khata changes need that check plus `khata:verifyUser` no drift under all 4 recognition combos (`tests/convex/khataTotals.test.ts`, helpers in `khataFixtures.ts`).
 - `npm run typecheck:convex` type-checks `convex/` + `tests/`. `npm run lint` runs `@convex-dev/eslint-plugin` recommended rules as **errors** on `convex/`. Target is 0 errors and 0 warnings.
 - Before a PR, run `npm test`, `npm run lint`, `npm run build` and `npm run typecheck:convex`.
 - Migrations use `@convex-dev/migrations` (`convex/convex.config.ts`, `convex/migrations.ts`). Make them idempotent with `batchSize: 1` per user.

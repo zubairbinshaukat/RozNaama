@@ -343,16 +343,43 @@ Deploy this **before** any frontend that sends `clientRequestId`. An older backe
 
 ---
 
-## 7. Admin dashboard (`ADMIN_EMAILS`)
+## 7. Admin dashboard (Clerk role "Admin")
 
-- **Admin check changed:** admin is now the caller's JWT email listed in the env var `ADMIN_EMAILS` (comma-separated, case-insensitive), with `email_verified` not `false`. The Clerk `role: "Admin"` / `public_metadata` check is gone. **Set the env var before (or right with) the deploy**, or the existing "Access / View as" button disappears for you (unset = nobody is admin).
+- **Admin check:** Clerk role `"Admin"` in the JWT claims (top-level `role`, `public_metadata.role`, `publicMetadata.role`, or a namespaced `…/public_metadata` claim) — the same rule as before the admin dashboard. No Convex env var is needed (`ADMIN_EMAILS` from the first draft is not read; remove it if you set it: `npx convex env remove ADMIN_EMAILS`).
+- **Clerk setup (dev and prod instances):**
+  1. Clerk dashboard → Users → your user → Metadata → **Public**: `{ "role": "Admin" }` (exact case).
+  2. Configure → JWT templates → **convex** → claims must include `"public_metadata": "{{user.public_metadata}}"` (add it next to the existing claims, save). Without it the server never sees the role and admin pages stay hidden.
+  3. Sign out and back in (or wait for the token to refresh) so the new claim is in the JWT.
+- **Schema (additive):** index `users.by_name` (small backfill on deploy). Read-only functions `admin:overview`, `admin:listUsers`, `admin:getUser`, `admin:watchSummaries`, `users:getMyAccess`. `convex/_generated/api.d.ts` gains `admin` and `model/adminStats`.
+- **Limits:** `overview` reads ≤ 40 users per page (≈ 33 docs per ready user, ≤ 500 for a not-ready one) and the page loads every page; `listUsers` ≤ 25 rows per page, search examines ≤ 1000 users per page; `watchSummaries` ≤ 20 users (≈ 45 docs per ready user, ≤ 504 for a not-ready one). Users whose totals are not ready are read from capped scans and flagged `partial`.
+- **Watchlist** is stored in the admin's browser (`localStorage`, per Clerk user id); nothing to migrate.
+- **Deploy order:** backend first, then frontend. Old frontends keep working: `validateViewAsTarget`, `listForAdmin` and `viewAsUserId` are unchanged and the admin rule is the same one they used.
+
+---
+
+## 8. Advance & Udhaar (Khata)
+
+Opt-in per shop. Shops that never turn it on see no change.
+
+- **Schema (additive, no migration, no backfill):**
+  - New tables `shopSettings`, `customers`, `khataEntries`, `khataPayments`, `khataSessionLinks`, `khataTotals`. They start empty, so their indexes build instantly.
+  - `clientRequests.kind` gains `'khataSale' | 'khataAdvance' | 'khataPayment'`, plus the optional fields `khataEntryId`, `khataPaymentId`, `khataRemaining`, `khataStatus`. Existing `'sale'` / `'expense'` rows still validate.
+- **API (additive):** new modules `settings` (`get`, `update`) and `khata` (queries `getTotals`, `listOpen`, `searchCustomers`, `customerDetail`, `receivedInRange`, `badgesForRange`; mutations `recordSale`, `openAdvance`, `receivePayment`, `completeAdvance`, `cancelAdvance`, `forgiveRemaining`, `updateEntry`, `removePayment`, `removeEntry`, `updateCustomer`, `archiveCustomer`; internal `verifyUser`, `rebuildUser`). Every existing function keeps its name, args and return shape. `convex/_generated/api.d.ts` gains `settings`, `khata`, `model/settings`, `model/khata`, `model/khataBalance`, `model/khataLinks`.
+- **Summary tables are not touched directly.** Khata sales go through the normal session / sale / expense helpers, so `dailyTotals`, `userTotals` and `categoryStats` stay exact. No rebuild is needed.
+- **Behaviour change for existing sales (only where khata created them):** `sales.updateItem` / `sales.removeItem` on a session created by khata return `VALIDATION` ("This is an Udhaar/Advance payment. Change it in Khata.", "This sale is linked to Udhaar/Advance. Cancel it from Khata." or, with khata off, "Turn on Advance & Udhaar in Settings to change it."). Shops without khata data pay one extra indexed read on an empty range per edit (two for a date move).
+- **Deploy order:** backend first (`npx convex dev --once`, then `npx convex deploy`), then the PWA. Old PWAs never call the new functions.
+- **Spot checks (read-only):**
 
   ```powershell
-  npx convex env set ADMIN_EMAILS "zubairbinshaukat4455@gmail.com"
-  npx convex env set --prod ADMIN_EMAILS "zubairbinshaukat4455@gmail.com"
-  npx convex env list --prod   # check
+  npx convex run khata:verifyUser '{"userId":"<usersId>"}'
+  npx convex run totals:verifyUserTotals '{"userId":"<usersId>"}'
   ```
 
-- **Schema (additive):** index `users.by_name` (small backfill on deploy). New read-only functions `admin:overview`, `admin:listUsers`, `admin:getUser`, `users:getMyAccess`. `convex/_generated/api.d.ts` gains `admin` and `model/adminStats`.
-- **Limits:** `overview` reads ≤ 40 users per page (≈ 33 docs per ready user, ≤ 500 for a not-ready one) and the page loads every page; `listUsers` ≤ 25 rows per page, search examines ≤ 1000 users per page. Users whose totals are not ready are read from capped scans and flagged `partial`.
-- **Deploy order:** backend first. An old frontend keeps working (it only used `validateViewAsTarget`, `listForAdmin` and `viewAsUserId`, which are unchanged), but it decides admin UI from Clerk metadata, so the server now answers FORBIDDEN unless your email is in `ADMIN_EMAILS`.
+  You want `ok: true` from both. If `khata:verifyUser` reports drift, repair that user (it recomputes entry balances from payments and the customer / shop sums from the entries; it never touches sales):
+
+  ```powershell
+  npx convex run khata:rebuildUser '{"userId":"<usersId>"}'
+  ```
+
+  Both read at most 5000 entries per user (`capped: true` above that; `rebuildUser` then fixes entries only, not the sums).
+- **Rollback:** the frontend hides everything when `khataEnabled` is false or the new build is rolled back. If you redeploy older functions, keep the new `convex/schema.ts` (the tables hold data). Note that older `sales.updateItem` code has no khata lock, so edits made meanwhile to khata sessions are not copied to their entries; run `khata:verifyUser` for khata users after redeploying this version.
