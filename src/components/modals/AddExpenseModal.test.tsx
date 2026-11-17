@@ -53,12 +53,12 @@ describe('AddExpenseModal smart entry', () => {
     expect(within(matches).getByRole('button', { name: 'Use Electricity' })).toBeTruthy()
   })
 
-  it('tapping a chip fills the title and last amount, overwriting a typed amount', () => {
+  it('tapping a chip fills only the title and keeps a typed amount', () => {
     renderModal()
     fireEvent.change(amountInput(), { target: { value: '5' } })
     fireEvent.click(screen.getByRole('button', { name: 'Use Rent' }))
     expect(titleInput().value).toBe('Rent')
-    expect(amountInput().value).toBe('200')
+    expect(amountInput().value).toBe('5')
   })
 
   it('remembers the title after a successful save', async () => {

@@ -64,11 +64,11 @@ describe('AddSaleModal smart entry', () => {
     expect(within(group).queryByRole('button', { name: 'Use Chai' })).toBeNull()
   })
 
-  it('tapping a chip fills name, amount and a category that still exists', () => {
+  it('tapping a chip fills name and a category that still exists, never the amount', () => {
     renderModal()
     fireEvent.click(screen.getByRole('button', { name: 'Use Chai' }))
     expect(nameInput().value).toBe('Chai')
-    expect(amountInput().value).toBe('50')
+    expect(amountInput().value).toBe('')
     expect(screen.getByText('Drinks')).toBeTruthy()
   })
 
@@ -76,17 +76,17 @@ describe('AddSaleModal smart entry', () => {
     renderModal()
     fireEvent.click(screen.getByRole('button', { name: 'Use Biscuit' }))
     expect(nameInput().value).toBe('Biscuit')
-    expect(amountInput().value).toBe('30')
+    expect(amountInput().value).toBe('')
     expect(screen.getByText('No category')).toBeTruthy()
   })
 
-  it('typing a known name never overwrites a typed amount; tapping the chip does', () => {
+  it('neither typing a known name nor tapping its chip changes a typed amount', () => {
     renderModal()
     fireEvent.change(amountInput(), { target: { value: '999' } })
     fireEvent.change(nameInput(), { target: { value: 'Chai' } })
     expect(amountInput().value).toBe('999')
     fireEvent.click(screen.getByRole('button', { name: 'Use Chai' }))
-    expect(amountInput().value).toBe('50')
+    expect(amountInput().value).toBe('999')
   })
 
   it('chips work per item row', () => {

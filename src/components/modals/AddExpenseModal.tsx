@@ -55,8 +55,8 @@ export default function AddExpenseModal({ onClose }: AddExpenseModalProps) {
   const pickSuggestion = (title: string) => {
     const entry = suggestions.find((s) => s.title === title);
     if (!entry) return;
+    // Title only; the amount stays whatever the user typed.
     setNote(entry.title.slice(0, NOTE_MAX));
-    setAmount(String(entry.lastAmount));
     setError(null);
     // Land on the amount with its text selected: confirm, or type over it.
     requestAnimationFrame(() => {

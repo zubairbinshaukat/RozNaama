@@ -73,8 +73,8 @@ export default function EditSaleModal({ item, categories, onClose }: EditSaleMod
     if (!entry) return
     const categoryStillExists =
       entry.categoryId !== undefined && categories.some((c) => c._id === entry.categoryId)
+    // Name + category only; never overwrite the amount.
     setProductName(entry.name.slice(0, PRODUCT_NAME_MAX))
-    setAmount(String(entry.lastAmount))
     setCategoryId(categoryStillExists ? (entry.categoryId ?? '') : '')
     setErrors({})
     requestAnimationFrame(() => {

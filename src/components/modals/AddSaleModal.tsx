@@ -136,8 +136,8 @@ export default function AddSaleModal({ onClose }: AddSaleModalProps) {
     setRows((prev) => prev.map((r) => r.id === id
       ? {
           ...r,
+          // Name + category only; the amount stays whatever the user typed (prices change).
           productName: entry.name.slice(0, PRODUCT_NAME_MAX),
-          amount:      String(entry.lastAmount),
           categoryId:  categoryStillExists ? (entry.categoryId ?? '') : '',
         }
       : r))
