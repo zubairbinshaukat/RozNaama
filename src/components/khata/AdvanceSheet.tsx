@@ -13,9 +13,9 @@ import { getErrorMessage } from '@/lib/errors'
 import { KHATA_ITEM_LABEL_MAX, toPaisa } from '@/lib/khata'
 import { btnPrimary, btnSecondary, fieldError, fieldLabel, inputBase } from '@/lib/ui'
 import { clampSaleDateToTodayMs, cn, startOfDay } from '@/lib/utils'
-import CustomerPicker from './CustomerPicker'
+import CustomerField from './CustomerField'
 import DueDateField from './DueDateField'
-import { customerArg, customerProblem, pickedName, type PickedCustomer } from './customer'
+import { customerArg, customerProblem, EMPTY_CUSTOMER, fieldName, type CustomerFieldValue } from './customer'
 
 type Errors = { customer?: string; amount?: string; total?: string }
 
@@ -24,7 +24,7 @@ export default function AdvanceSheet({ onClose }: { onClose: () => void }) {
   const titleId = useId()
   const uid = useId()
   const amountRef = useRef<HTMLInputElement | null>(null)
-  const [customer, setCustomer] = useState<PickedCustomer | null>(null)
+  const [customer, setCustomer] = useState<CustomerFieldValue>(EMPTY_CUSTOMER)
   const [amount, setAmount] = useState('')
   const [dateMs, setDateMs] = useState(() => startOfDay())
   const [details, setDetails] = useState(false)
@@ -54,15 +54,15 @@ export default function AdvanceSheet({ onClose }: { onClose: () => void }) {
       else totalValue = t.value
     }
     setErrors(next)
-    if (Object.keys(next).length > 0 || !customer || !a.ok) return
+    if (Object.keys(next).length > 0 || !a.ok) return
 
     setSaving(true)
     setTopError(null)
-    const name = pickedName(customer)
+    const name = fieldName(customer)
     try {
       const out = await submitAdvance({
-        customer:     customerArg(customer),
-        customerName: name,
+        ...(customerArg(customer) ? { customer: customerArg(customer) } : {}),
+        ...(name ? { customerName: name } : {}),
         amount:       a.value,
         receivedAt:   clampSaleDateToTodayMs(dateMs),
         ...(totalValue !== undefined ? { total: totalValue } : {}),
@@ -70,7 +70,7 @@ export default function AdvanceSheet({ onClose }: { onClose: () => void }) {
         ...(dueDate !== null ? { dueDate } : {}),
         recognition:  settings.advanceRecognition,
       })
-      if (out.status === 'saved') showToast(`Saved · Advance ${money(a.value)} (${name})`, 'success')
+      if (out.status === 'saved') showToast(`Saved · Advance ${money(a.value)}${name ? ` (${name})` : ''}`, 'success')
       else {
         const t = queuedToast(out.problem)
         showToast(t.message, t.type)
@@ -102,7 +102,7 @@ export default function AdvanceSheet({ onClose }: { onClose: () => void }) {
             <AlertCircle size={18} className="shrink-0 mt-0.5" /> {topError}
           </p>
         )}
-        <CustomerPicker value={customer} onChange={(c) => { setCustomer(c); setErrors((e) => ({ ...e, customer: undefined })) }} disabled={saving} error={errors.customer} />
+        <CustomerField value={customer} onChange={(c) => { setCustomer(c); setErrors((e) => ({ ...e, customer: undefined })) }} disabled={saving} error={errors.customer} />
 
         <div className="flex flex-col gap-1.5">
           <label htmlFor={`${uid}-amount`} className={fieldLabel}>Advance received</label>

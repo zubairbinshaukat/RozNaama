@@ -257,7 +257,7 @@ describe('khata.recordSale', () => {
     expect(await errorData(udhaar(as, { items: [{ productName: 'X', amount: 0 }] }))).toMatchObject({ code: 'VALIDATION' })
     expect(await errorData(udhaar(as, { items: [{ productName: 'X', amount: 99.999 }] }))).toMatchObject({ code: 'VALIDATION' })
     expect(await errorData(udhaar(as, { items: [] }))).toMatchObject({ code: 'VALIDATION' })
-    expect(await errorData(udhaar(as, { name: '   ' }))).toEqual({ code: 'VALIDATION', message: 'Customer name is required' })
+    // (a blank name is a nameless record now: see khataNameless.test.ts)
     expect(await errorData(udhaar(as, { name: 'x'.repeat(41) }))).toMatchObject({ code: 'VALIDATION' })
     expect(await errorData(udhaar(as, { phone: '0300-abc' }))).toEqual({
       code: 'VALIDATION', message: 'Phone number can only have digits and +',

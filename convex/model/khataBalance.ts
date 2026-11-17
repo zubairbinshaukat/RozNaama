@@ -124,25 +124,35 @@ async function addToKhataTotals(ctx: MutationCtx, userId: Id<'users'>, d: Contri
   else await ctx.db.insert('khataTotals', { userId, ...next })
 }
 
+/** Add `d` to a customer's aggregates; `touch` also bumps lastActivityAt. No-op for nameless entries. */
 async function applyToCustomer(
   ctx: MutationCtx,
-  customerId: Id<'customers'>,
+  customerId: Id<'customers'> | undefined,
   d: Contribution,
-  now: number,
+  touch: boolean,
 ): Promise<void> {
+  if (customerId === undefined) return
   const customer = await ctx.db.get('customers', customerId)
   if (!customer) return
+  if (isZero(d) && !touch) return
   await ctx.db.patch('customers', customerId, {
     dueTotal:       fromPaisa(toPaisa(customer.dueTotal) + d.duePaisa),
     heldTotal:      fromPaisa(toPaisa(customer.heldTotal) + d.heldPaisa),
     openCount:      customer.openCount + d.openCount,
-    lastActivityAt: Math.max(customer.lastActivityAt, now),
+    ...(touch ? { lastActivityAt: Math.max(customer.lastActivityAt, Date.now()) } : {}),
   })
+}
+
+function negate(c: Contribution): Contribution {
+  return diff(c, ZERO)
 }
 
 /**
  * Aggregate hook for every khataEntries write: patches the customer
  * (balances + lastActivityAt) and khataTotals by the contribution diff.
+ * A changed customerId (setEntryCustomer) moves the entry's whole
+ * contribution from the old customer to the new one; the old one's
+ * lastActivityAt is left alone. Nameless entries only touch khataTotals.
  */
 export async function onEntryChange(
   ctx: MutationCtx,
@@ -152,13 +162,20 @@ export async function onEntryChange(
   const entry = after ?? before
   if (!entry) return
   const d = diff(contributionOf(before), contributionOf(after))
-  await applyToCustomer(ctx, entry.customerId, d, Date.now())
+  const oldCustomer = before?.customerId
+  const newCustomer = after?.customerId
+  if (before && after && oldCustomer !== newCustomer) {
+    await applyToCustomer(ctx, oldCustomer, negate(contributionOf(before)), false)
+    await applyToCustomer(ctx, newCustomer, contributionOf(after), true)
+  } else {
+    await applyToCustomer(ctx, newCustomer ?? oldCustomer, d, true)
+  }
   if (!isZero(d)) await addToKhataTotals(ctx, entry.userId, d)
 }
 
 // ─── Entry write primitives (each fires onEntryChange) ──────────────────────
 
-export type EntryPatch = Partial<Omit<KhataEntry, '_id' | '_creationTime' | 'userId' | 'customerId' | 'kind' | 'recognition' | 'createdAt'>>
+export type EntryPatch = Partial<Omit<KhataEntry, '_id' | '_creationTime' | 'userId' | 'kind' | 'recognition' | 'createdAt'>>
 
 export async function insertEntry(
   ctx: MutationCtx,
@@ -263,12 +280,12 @@ export async function checkKhata(ctx: ReadCtx, userId: Id<'users'>): Promise<Kha
     }
 
     const c = contributionOf(expectedEntry)
-    const acc = byCustomer.get(entry.customerId) ?? { ...ZERO }
-    for (const k of Object.keys(c) as (keyof Contribution)[]) {
-      acc[k] += c[k]
-      sum[k] += c[k]
+    for (const k of Object.keys(c) as (keyof Contribution)[]) sum[k] += c[k]
+    if (entry.customerId !== undefined) {
+      const acc = byCustomer.get(entry.customerId) ?? { ...ZERO }
+      for (const k of Object.keys(c) as (keyof Contribution)[]) acc[k] += c[k]
+      byCustomer.set(entry.customerId, acc)
     }
-    byCustomer.set(entry.customerId, acc)
   }
 
   const rawCustomers = await ctx.db

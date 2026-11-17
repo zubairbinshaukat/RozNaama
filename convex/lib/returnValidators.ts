@@ -92,29 +92,49 @@ export const khataTotalsValue = v.object({
   heldCount: v.number(),
 })
 
+/** `customerId` in khata query rows: null = nameless record. */
+const nullableCustomerId = v.union(v.id('customers'), v.null())
+
+/** A payment row as returned by queries (`customerId` null when nameless). */
+export const khataPaymentRow = v.object({
+  ...khataPaymentDoc.fields,
+  customerId: nullableCustomerId,
+})
+
 /**
  * An entry plus its computed `remaining` (PKR): total − paid − forgiven, or
- * null for an advance without a total yet.
+ * null for an advance without a total yet. `customerId` null = nameless.
  */
 export const khataEntryWithRemaining = v.object({
   ...khataEntryDoc.fields,
-  remaining: v.union(v.number(), v.null()),
+  customerId: nullableCustomerId,
+  remaining:  v.union(v.number(), v.null()),
 })
 
-/** khata.listOpen row: entry + remaining + joined customer name/phone. */
+/** khata.listOpen row: entry + remaining + joined customer name/phone (null name = nameless). */
 export const khataOpenRow = v.object({
   ...khataEntryDoc.fields,
+  customerId:    nullableCustomerId,
   remaining:     v.union(v.number(), v.null()),
-  customerName:  v.string(),
+  customerName:  v.union(v.string(), v.null()),
   customerPhone: v.optional(v.string()),
 })
 
 /** khata.customerDetail entry: entry + remaining + its payments (newest first). */
 export const khataDetailEntry = v.object({
   ...khataEntryDoc.fields,
+  customerId:     nullableCustomerId,
   remaining:      v.union(v.number(), v.null()),
-  payments:       v.array(khataPaymentDoc),
+  payments:       v.array(khataPaymentRow),
   paymentsCapped: v.boolean(),
+})
+
+/** khata.entryDetail result (works for named and nameless records). */
+export const khataEntryDetail = v.object({
+  entry:          khataEntryWithRemaining,
+  payments:       v.array(khataPaymentRow),
+  paymentsCapped: v.boolean(),
+  customer:       v.union(customerDoc, v.null()),
 })
 
 /** khata.badgesForRange row. */
@@ -122,11 +142,11 @@ export const khataBadge = v.object({
   saleSessionId: v.id('saleSessions'),
   role:          v.union(v.literal('delivery'), v.literal('payment')),
   entryId:       v.id('khataEntries'),
-  customerId:    v.id('customers'),
+  customerId:    nullableCustomerId,
   kind:          khataKindValidator,
   status:        khataStatusValidator,
   remaining:     v.union(v.number(), v.null()),
-  customerName:  v.string(),
+  customerName:  v.union(v.string(), v.null()),
 })
 
 /** Pagination result for `item` (accepts the `{ page: [], isDone: true, continueCursor: '' }` empty shape). */

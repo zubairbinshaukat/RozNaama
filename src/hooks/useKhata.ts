@@ -43,6 +43,13 @@ export function useCustomerDetail(customerId: Id<'customers'> | null) {
   return useQuery(api.khata.customerDetail, on && customerId ? { customerId, ...va } : 'skip')
 }
 
+/** One record with its payments and customer (null when missing). Works for nameless records. */
+export function useEntryDetail(entryId: Id<'khataEntries'> | null) {
+  const on = useKhataQueriesEnabled()
+  const va = useViewAsQueryPatch()
+  return useQuery(api.khata.entryDetail, on && entryId ? { entryId, ...va } : 'skip')
+}
+
 /** Money received from customers between two instants (payments only). */
 export function useKhataReceivedInRange(startDate: number, endDate: number) {
   const on = useKhataQueriesEnabled()
@@ -78,6 +85,7 @@ export function useKhataActions() {
     removeEntry:      useMutation(api.khata.removeEntry),
     updateCustomer:   useMutation(api.khata.updateCustomer),
     archiveCustomer:  useMutation(api.khata.archiveCustomer),
+    setEntryCustomer: useMutation(api.khata.setEntryCustomer),
   }
 }
 

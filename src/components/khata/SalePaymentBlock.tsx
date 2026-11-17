@@ -5,7 +5,7 @@ import Amount from '@/components/shared/Amount'
 import { cn } from '@/lib/utils'
 import { fieldError, fieldLabel } from '@/lib/ui'
 import { subMoney, toPaisa } from '@/lib/khata'
-import CustomerPicker from './CustomerPicker'
+import CustomerField from './CustomerField'
 import { receivedValue, type SalePayment, type SalePaymentErrors } from './customer'
 
 interface SalePaymentBlockProps {
@@ -80,7 +80,7 @@ export default function SalePaymentBlock({ value, onChange, total, errors, disab
           </div>
 
           {!fullyPaid && (
-            <CustomerPicker
+            <CustomerField
               value={value.customer}
               onChange={(customer) => onChange({ ...value, customer })}
               disabled={disabled}

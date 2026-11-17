@@ -14,7 +14,7 @@ import { getErrorMessage } from '@/lib/errors'
 import { subMoney, toPaisa } from '@/lib/khata'
 import { btnPrimary, btnSecondary, chip, chipActive, chipIdle, fieldError, fieldLabel } from '@/lib/ui'
 import { clampSaleDateToTodayMs, cn, startOfDay } from '@/lib/utils'
-import { entryTitle, type EntryTarget } from './model'
+import { displayName, entryTitle, nameSuffix, type EntryTarget } from './model'
 
 /** Handover of a booked order: final bill, cash received now (already-paid shown). Online only. */
 export default function CompleteOrderSheet({ target, onClose }: { target: EntryTarget; onClose: () => void }) {
@@ -59,8 +59,8 @@ export default function CompleteOrderSheet({ target, onClose }: { target: EntryT
         deliveredAt: clampSaleDateToTodayMs(dateMs),
       })
       showToast(out.remaining > 0
-        ? `Order handed over · Baqi ${money(out.remaining)} (${target.customerName})`
-        : `Order handed over · ${target.customerName} paid in full`, 'success')
+        ? `Order handed over · Baqi ${money(out.remaining)}${nameSuffix(target.customerName)}`
+        : `Order handed over · ${target.customerName ? `${target.customerName} paid in full` : 'Paid in full'}`, 'success')
       onClose()
     } catch (e) {
       showToast(getErrorMessage(e, 'Could not complete the order. Try again.'), 'error')
@@ -74,7 +74,7 @@ export default function CompleteOrderSheet({ target, onClose }: { target: EntryT
       <SheetHeader
         titleId={titleId}
         title="Complete order"
-        subtitle={<>{target.customerName} · {entryTitle(target)}</>}
+        subtitle={<>{displayName(target.customerName)} · {entryTitle(target)}</>}
         icon={<PackageCheck size={18} />}
         onClose={close}
         closeDisabled={saving}

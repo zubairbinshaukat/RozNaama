@@ -46,14 +46,15 @@ export type SubmitExpenseArgs = ExpenseArgs
 
 /** Udhaar sale. `recognition` comes from the cached shop settings and is always sent. */
 export type SubmitKhataSaleArgs = KhataSaleArgs & {
-  /** Shown on the pending row (also for an existing customer `{ id }`). */
-  customerName:    string
+  /** Shown on the pending row (also for an existing customer `{ id }`). Absent = no name. */
+  customerName?:   string
   categoryLabels?: Record<string, string>
 }
-export type SubmitAdvanceArgs = KhataAdvanceArgs & { customerName: string }
+export type SubmitAdvanceArgs = KhataAdvanceArgs & { customerName?: string }
 /** Payment on a server-known entry; `recognition` / `entryKind` are that entry's (frozen). */
 export type SubmitPaymentArgs = KhataPaymentArgs & {
-  customerName: string
+  /** Null / absent for a record without a name. */
+  customerName?: string | null
   entryKind:    'udhaar' | 'advance'
   recognition:  Recognition
   customerId?:  string
@@ -85,15 +86,24 @@ function pickItem(i: SaleItemArgs): SaleItemArgs {
   }
 }
 
-function pickCustomer(c: KhataCustomerArg): KhataCustomerArg {
+/** The customer arg to send: undefined when there is none or the name is blank. */
+function pickCustomer(c: KhataCustomerArg | undefined): KhataCustomerArg | undefined {
+  if (!c) return undefined
   if ('id' in c) return { id: c.id }
-  return { name: c.name, ...(c.phone !== undefined && c.phone !== '' ? { phone: c.phone } : {}) }
+  const name = c.name.trim().replace(/\s+/g, ' ')
+  if (!name) return undefined
+  const phone = c.phone?.trim()
+  return { name, ...(phone ? { phone } : {}) }
 }
+
+const customerPart = (c: KhataCustomerArg | undefined) => (c ? { customer: c } : {})
+const metaName = (name: string | null | undefined) => (name?.trim() ? { customerName: name.trim() } : {})
+const metaCustomerId = (c: KhataCustomerArg | undefined) => (c && 'id' in c ? { customerId: c.id as string } : {})
 
 /** Exactly the server args (no display fields) for each kind. */
 export function khataSaleArgs(a: SubmitKhataSaleArgs): KhataSaleArgs {
   return {
-    customer: pickCustomer(a.customer),
+    ...customerPart(pickCustomer(a.customer)),
     items: a.items.map(pickItem),
     sessionDate: a.sessionDate,
     receivedNow: a.receivedNow,
@@ -103,7 +113,7 @@ export function khataSaleArgs(a: SubmitKhataSaleArgs): KhataSaleArgs {
 
 export function khataAdvanceArgs(a: SubmitAdvanceArgs): KhataAdvanceArgs {
   return {
-    customer: pickCustomer(a.customer),
+    ...customerPart(pickCustomer(a.customer)),
     amount: a.amount,
     receivedAt: a.receivedAt,
     ...(a.total !== undefined ? { total: a.total } : {}),
@@ -162,10 +172,10 @@ export function buildEntry(owner: string, id: string, input: SubmitInput, now: n
         dayKey: toLocalDateKey(args.sessionDate),
         args,
         khata: {
-          customerName: input.args.customerName,
+          ...metaName(input.args.customerName),
           countedAmount: khataSaleCounted(args.recognition, total, args.receivedNow),
           entryKind: 'udhaar',
-          ...('id' in args.customer ? { customerId: args.customer.id } : {}),
+          ...metaCustomerId(args.customer),
         },
         ...(input.args.categoryLabels ? { categoryLabels: { ...input.args.categoryLabels } } : {}),
       }
@@ -179,10 +189,10 @@ export function buildEntry(owner: string, id: string, input: SubmitInput, now: n
         dayKey: toLocalDateKey(args.receivedAt),
         args,
         khata: {
-          customerName: input.args.customerName,
+          ...metaName(input.args.customerName),
           countedAmount: khataCashCounted(args.recognition, args.amount),
           entryKind: 'advance',
-          ...('id' in args.customer ? { customerId: args.customer.id } : {}),
+          ...metaCustomerId(args.customer),
         },
       }
     }
@@ -195,7 +205,7 @@ export function buildEntry(owner: string, id: string, input: SubmitInput, now: n
         dayKey: toLocalDateKey(args.receivedAt),
         args,
         khata: {
-          customerName: input.args.customerName,
+          ...metaName(input.args.customerName),
           countedAmount: khataCashCounted(input.args.recognition, args.amount),
           entryKind: input.args.entryKind,
           ...(input.args.customerId ? { customerId: input.args.customerId } : {}),

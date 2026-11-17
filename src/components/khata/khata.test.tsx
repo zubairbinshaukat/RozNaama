@@ -17,6 +17,11 @@ import ReceivePaymentSheet from './ReceivePaymentSheet'
 import CompleteOrderSheet from './CompleteOrderSheet'
 import CustomerSheet from './CustomerSheet'
 import type { EntryTarget } from './model'
+import AdvanceSheet from './AdvanceSheet'
+import EntrySheet from './EntrySheet'
+import ReceivePaymentFlow from './ReceivePaymentFlow'
+import { badgeText } from './badgeContext'
+import type { KhataBadge, KhataEntryDetail } from '@/lib/khata'
 
 const m = vi.hoisted(() => ({
   viewAs: false,
@@ -30,6 +35,8 @@ const m = vi.hoisted(() => ({
   fixPaymentAmount: vi.fn(async () => {}),
   customers: [] as unknown[],
   detail: undefined as unknown,
+  entryDetail: undefined as unknown,
+  setEntryCustomer: vi.fn(),
   totals: undefined as unknown,
   openRows: { due: [] as unknown[], booked: [] as unknown[] },
   pending: [] as unknown[],
@@ -68,6 +75,7 @@ vi.mock('@/hooks/useOutbox', () => ({
 vi.mock('@/hooks/useKhata', () => ({
   useCustomerSearch: () => m.customers,
   useCustomerDetail: (id: string | null) => (id ? m.detail : undefined),
+  useEntryDetail: (id: string | null) => (id ? m.entryDetail : undefined),
   useKhataTotals: () => m.totals,
   useKhataOpenList: (segment: 'due' | 'booked') => ({
     results: m.openRows[segment], status: 'Exhausted', loadMore: vi.fn(), isLoading: false,
@@ -78,6 +86,7 @@ vi.mock('@/hooks/useKhata', () => ({
   useKhataActions: () => ({
     completeAdvance: m.completeAdvance, cancelAdvance: vi.fn(), forgiveRemaining: vi.fn(), updateEntry: vi.fn(),
     removePayment: vi.fn(), removeEntry: vi.fn(), updateCustomer: vi.fn(), archiveCustomer: vi.fn(),
+    setEntryCustomer: m.setEntryCustomer,
   }),
   useUpdateShopSettings: () => m.updateSettings,
 }))
@@ -165,19 +174,62 @@ describe('Add Sale with Advance & Udhaar on', () => {
   })
 
   it('"No" path offline: queued toast; a new customer needs a name', async () => {
+    // Typed name that matches no chip = new customer (created on save), phone optional.
+    m.submitKhataSale.mockResolvedValue({ status: 'queued', entryId: 'e' })
+    wrap(<AddSaleModal onClose={vi.fn()} />)
+    fill()
+    fireEvent.click(screen.getByRole('button', { name: 'No' }))
+    fireEvent.change(screen.getByLabelText(/Customer name/), { target: { value: '  Sana   Bibi ' } })
+    expect(screen.getByTestId('new-customer-hint').textContent).toContain('New customer')
+    fireEvent.click(screen.getByRole('button', { name: /Add phone/ }))
+    fireEvent.change(screen.getByLabelText('Phone (optional)'), { target: { value: '0321 7654321' } })
+    fireEvent.click(screen.getByRole('button', { name: /Save sale/ }))
+    expect(await screen.findByText('Saved on phone — will sync')).toBeTruthy()
+    expect(m.submitKhataSale).toHaveBeenCalledWith(expect.objectContaining({
+      customer: { name: 'Sana Bibi', phone: '0321 7654321' }, customerName: 'Sana Bibi', receivedNow: 0,
+    }))
+  })
+
+  it('blank name: saved without a customer ("Saved · Baqi PKR 2,000")', async () => {
+    m.submitKhataSale.mockResolvedValue({ status: 'saved', entryId: 'e', result: { entryId: 'k1', remaining: 2000 } })
+    wrap(<AddSaleModal onClose={vi.fn()} />)
+    fill()
+    fireEvent.click(screen.getByRole('button', { name: 'No' }))
+    fireEvent.change(screen.getByLabelText('Received now'), { target: { value: '4000' } })
+    fireEvent.click(screen.getByRole('button', { name: /Save sale/ }))
+    expect(await screen.findByText('Saved · Baqi PKR 2,000')).toBeTruthy()
+    const args = m.submitKhataSale.mock.calls[0]?.[0] as Record<string, unknown>
+    expect(args).not.toHaveProperty('customer')
+    expect(args).not.toHaveProperty('customerName')
+  })
+
+  it('blank name offline: queued', async () => {
     m.submitKhataSale.mockResolvedValue({ status: 'queued', entryId: 'e' })
     wrap(<AddSaleModal onClose={vi.fn()} />)
     fill()
     fireEvent.click(screen.getByRole('button', { name: 'No' }))
     fireEvent.click(screen.getByRole('button', { name: /Save sale/ }))
-    expect(await screen.findByText('Choose the customer.')).toBeTruthy()
-    fireEvent.click(screen.getByRole('button', { name: 'New customer' }))
-    fireEvent.change(screen.getByLabelText('Name'), { target: { value: '  Sana   Bibi ' } })
-    fireEvent.click(screen.getByRole('button', { name: /Save sale/ }))
     expect(await screen.findByText('Saved on phone — will sync')).toBeTruthy()
-    expect(m.submitKhataSale).toHaveBeenCalledWith(expect.objectContaining({
-      customer: { name: 'Sana Bibi' }, customerName: 'Sana Bibi', receivedNow: 0,
-    }))
+    expect(m.submitKhataSale.mock.calls[0]?.[0]).not.toHaveProperty('customer')
+  })
+
+  it('chips filter while typing (name + phone tail); a chip can be cleared with ×', () => {
+    m.customers = [ALI, { ...ALI, _id: 'c2' as Id<'customers'>, name: 'Bilal', normalizedName: 'bilal', phone: undefined }]
+    wrap(<AddSaleModal onClose={vi.fn()} />)
+    fill()
+    fireEvent.click(screen.getByRole('button', { name: 'No' }))
+    expect(screen.getByRole('group', { name: 'Recent customers' }).textContent).toContain('Bilal')
+    const field = screen.getByLabelText(/Customer name/) as HTMLInputElement
+    fireEvent.change(field, { target: { value: 'al' } })
+    const chips = screen.getByRole('group', { name: 'Matching customers' })
+    expect(within(chips).getByRole('button', { name: 'Use Ali · 4567' })).toBeTruthy()
+    // "Bilal" contains "al" but is not a prefix match: it comes after Ali.
+    expect(within(chips).getAllByRole('button').map((b) => b.textContent)).toEqual(['Ali · 4567', 'Bilal'])
+    fireEvent.click(within(chips).getByRole('button', { name: 'Use Ali · 4567' }))
+    expect(field.value).toBe('Ali')
+    expect(screen.queryByTestId('new-customer-hint')).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: 'Clear customer name' }))
+    expect(field.value).toBe('')
   })
 
   it('received == total: inline hint and saved as a normal sale', async () => {
@@ -415,5 +467,126 @@ describe('Pending payment over the Baqi', () => {
     expect(screen.queryByRole('button', { name: 'Save without category' })).toBeNull()
     expect(screen.queryByRole('button', { name: 'Change amount' })).toBeNull()
     expect(screen.getByRole('button', { name: /Discard/ })).toBeTruthy()
+  })
+})
+
+// ── Records without a name ──────────────────────────────────────────────────
+
+const NAMELESS_ROW = {
+  _id: 'k9' as Id<'khataEntries'>, _creationTime: 1, userId: 'u1' as Id<'users'>, customerId: null, kind: 'udhaar',
+  status: 'due', recognition: 'delivery', total: 6000, paid: 3000, itemLabel: 'Suit',
+  openedAt: Date.parse('2026-11-12T00:00:00+05:00'), createdAt: 1, updatedAt: 1, remaining: 3000, customerName: null,
+} as unknown as KhataOpenRow
+
+function namelessDetail(): KhataEntryDetail {
+  const { customerName: _n, ...entry } = NAMELESS_ROW as unknown as Record<string, unknown>
+  void _n
+  return { entry, payments: [], paymentsCapped: false, customer: null } as unknown as KhataEntryDetail
+}
+
+describe('records without a name', () => {
+  beforeEach(() => {
+    m.entryDetail = undefined
+    m.setEntryCustomer.mockReset()
+    m.setEntryCustomer.mockResolvedValue({ customerId: null })
+  })
+
+  it('advance without a name: no customer sent, toast without a name', async () => {
+    m.submitAdvance.mockResolvedValue({ status: 'saved', entryId: 'e', result: { entryId: 'k1' } })
+    wrap(<AdvanceSheet onClose={vi.fn()} />)
+    fireEvent.change(screen.getByLabelText('Advance received'), { target: { value: '5000' } })
+    fireEvent.click(screen.getByRole('button', { name: /Save advance/ }))
+    expect(await screen.findByText('Saved · Advance PKR 5,000')).toBeTruthy()
+    expect(m.submitAdvance.mock.calls[0]?.[0]).not.toHaveProperty('customer')
+  })
+
+  it('advance with a chip: that customer', async () => {
+    m.submitAdvance.mockResolvedValue({ status: 'queued', entryId: 'e' })
+    wrap(<AdvanceSheet onClose={vi.fn()} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Use Ali · 4567' }))
+    fireEvent.change(screen.getByLabelText('Advance received'), { target: { value: '5000' } })
+    fireEvent.click(screen.getByRole('button', { name: /Save advance/ }))
+    expect(await screen.findByText('Saved on phone — will sync')).toBeTruthy()
+    expect(m.submitAdvance).toHaveBeenCalledWith(expect.objectContaining({ customer: { id: 'c1' }, customerName: 'Ali' }))
+  })
+
+  it('/khata shows "No name · Suit · since 12 Nov" and opens the record sheet', () => {
+    m.openRows = { due: [NAMELESS_ROW], booked: [] }
+    m.entryDetail = namelessDetail()
+    wrap(<Khata />)
+    const list = screen.getByRole('list', { name: 'Udhaar' })
+    expect(list.textContent).toContain('No name')
+    expect(list.textContent).toContain('Suit · since 12 Nov')
+    fireEvent.click(within(list).getByRole('button'))
+    expect(screen.getByRole('dialog', { name: 'No name' })).toBeTruthy()
+  })
+
+  it('"Add name" types a new customer → setEntryCustomer', async () => {
+    m.entryDetail = namelessDetail()
+    wrap(<EntrySheet entryId={'k9' as Id<'khataEntries'>} onClose={vi.fn()} />)
+    const sheet = screen.getByRole('dialog', { name: 'No name' })
+    expect(within(sheet).queryByRole('link', { name: /WhatsApp/ })).toBeNull()
+    fireEvent.click(within(sheet).getByRole('button', { name: /Add name/ }))
+    const add = screen.getByRole('dialog', { name: 'Add name' })
+    fireEvent.change(within(add).getByLabelText(/Customer name/), { target: { value: 'Zara' } })
+    fireEvent.click(within(add).getByRole('button', { name: /Save/ }))
+    await waitFor(() => expect(m.setEntryCustomer).toHaveBeenCalledWith({ entryId: 'k9', customer: { name: 'Zara' } }))
+  })
+
+  it('"Add name" with a chip sends that customer id', async () => {
+    m.entryDetail = namelessDetail()
+    wrap(<EntrySheet entryId={'k9' as Id<'khataEntries'>} onClose={vi.fn()} />)
+    fireEvent.click(screen.getByRole('button', { name: /Add name/ }))
+    const add = screen.getByRole('dialog', { name: 'Add name' })
+    fireEvent.click(within(add).getByRole('button', { name: 'Use Ali · 4567' }))
+    fireEvent.click(within(add).getByRole('button', { name: /Save/ }))
+    await waitFor(() => expect(m.setEntryCustomer).toHaveBeenCalledWith({ entryId: 'k9', customer: { id: 'c1' } }))
+  })
+
+  it('customer sheet ⋯ → Change customer / Remove name', async () => {
+    m.detail = detailWithDue()
+    wrap(<CustomerSheet customerId={ALI._id} onClose={vi.fn()} />)
+    fireEvent.click(screen.getByRole('button', { name: 'More for Udhaar · Suit' }))
+    fireEvent.click(screen.getByRole('button', { name: /Change customer/ }))
+    const sheet = screen.getByRole('dialog', { name: 'Change customer' })
+    fireEvent.click(within(sheet).getByRole('button', { name: /Remove name/ }))
+    await waitFor(() => expect(m.setEntryCustomer).toHaveBeenCalledWith({ entryId: 'k1', customer: null }))
+  })
+
+  it('FAB Receive payment lists customers as chips and nameless records as rows', async () => {
+    m.openRows = {
+      due: [NAMELESS_ROW, { ...NAMELESS_ROW, _id: 'k1', customerId: 'c1', customerName: 'Ali', customerPhone: '03001234567' } as unknown as KhataOpenRow],
+      booked: [],
+    }
+    wrap(<ReceivePaymentFlow onClose={vi.fn()} />)
+    expect(screen.getByRole('group', { name: 'Customers with Baqi or advance' }).textContent).toContain('Ali · 4567')
+    const nameless = screen.getByRole('list', { name: 'Records without a name' })
+    expect(nameless.textContent).toContain('No name · Udhaar · Suit')
+    fireEvent.change(screen.getByLabelText('Search customer'), { target: { value: 'zz' } })
+    expect(screen.getByText('Nothing open by that name.')).toBeTruthy()
+    fireEvent.change(screen.getByLabelText('Search customer'), { target: { value: '' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Use Ali · 4567' }))
+    expect(screen.getByRole('dialog', { name: 'Receive payment' }).textContent).toContain('Ali')
+  })
+
+  it('badges without a name: "Received", "Advance", "Baqi 3,000"', () => {
+    const b = (over: Partial<KhataBadge>) => ({
+      saleSessionId: 's', role: 'delivery', entryId: 'k', customerId: null, kind: 'udhaar', status: 'due',
+      remaining: 3000, customerName: null, ...over,
+    }) as unknown as KhataBadge
+    expect(badgeText(b({ role: 'payment' }))).toEqual({ kind: 'label', text: 'Received' })
+    expect(badgeText(b({ kind: 'advance', status: 'settled' }))).toEqual({ kind: 'label', text: 'Advance' })
+    expect(badgeText(b({}))).toEqual({ kind: 'baqi', amount: 3000 })
+    expect(badgeText(b({ role: 'payment', customerName: 'Ali' } as Partial<KhataBadge>))).toEqual({ kind: 'label', text: 'Received · Ali' })
+  })
+
+  it('pending record without a name shows "No name"', () => {
+    const e = buildEntry('user_a', 'ks-9', {
+      kind: 'khataSale',
+      args: { items: [{ productName: 'Suit', amount: 6000 }], sessionDate: Date.now(), receivedNow: 0, recognition: 'delivery' },
+    })
+    m.outboxEntries = [e]
+    wrap(<PendingEntrySheet rowId="ks-9" categories={[]} onClose={vi.fn()} />)
+    expect(screen.getByRole('dialog', { name: 'Udhaar · No name' })).toBeTruthy()
   })
 })

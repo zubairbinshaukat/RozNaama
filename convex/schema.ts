@@ -178,7 +178,7 @@ export default defineSchema({
   // One Udhaar (credit sale) or Advance (booking) record. `recognition` is frozen at creation.
   khataEntries: defineTable({
     userId:      v.id('users'),
-    customerId:  v.id('customers'),
+    customerId:  v.optional(v.id('customers')), // absent = nameless record
     kind:        v.union(v.literal('advance'), v.literal('udhaar')),
     status:      v.union(v.literal('booked'), v.literal('due'), v.literal('settled'), v.literal('cancelled')),
     recognition: v.union(v.literal('delivery'), v.literal('cash')),
@@ -209,7 +209,7 @@ export default defineSchema({
   khataPayments: defineTable({
     userId:        v.id('users'),
     entryId:       v.id('khataEntries'),
-    customerId:    v.id('customers'),
+    customerId:    v.optional(v.id('customers')), // copy of the entry's (absent = nameless)
     kind:          v.union(v.literal('payment'), v.literal('refund')),
     amount:        v.number(),
     receivedAt:    v.number(),

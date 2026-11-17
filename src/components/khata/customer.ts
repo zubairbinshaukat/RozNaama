@@ -1,20 +1,44 @@
-import { PHONE_MAX, phoneProblem, phoneTail, toPaisa, type KhataCustomer } from '@/lib/khata'
+import { PHONE_MAX, customerNameKey, phoneProblem, phoneTail, toPaisa, type KhataCustomer } from '@/lib/khata'
+import type { KhataCustomerArg } from '@/lib/offline/types'
 import type { Id } from '../../../convex/_generated/dataModel'
 
-/** The customer chosen in a form: an existing one, or a new one (created on save). */
-export type PickedCustomer =
-  | { kind: 'existing'; id: Id<'customers'>; name: string; phone?: string }
-  | { kind: 'new'; name: string; phone: string }
+/** A saved customer chosen from the chips. */
+export type ChosenCustomer = { id: Id<'customers'>; name: string; phone?: string }
 
-export function pickedName(c: PickedCustomer): string {
-  return c.name.trim().replace(/\s+/g, ' ')
+/**
+ * The inline "Customer name (optional)" field: what is typed, the chip that
+ * was tapped (if any) and, for a new name, an optional phone.
+ */
+export type CustomerFieldValue = {
+  text:      string
+  picked:    ChosenCustomer | null
+  phone:     string
+  phoneOpen: boolean
 }
 
-/** `{ id }` or `{ name, phone? }` for khata mutations. */
-export function customerArg(c: PickedCustomer): { id: Id<'customers'> } | { name: string; phone?: string } {
-  if (c.kind === 'existing') return { id: c.id }
-  const phone = c.phone.trim()
-  return { name: pickedName(c), ...(phone ? { phone } : {}) }
+export const EMPTY_CUSTOMER: CustomerFieldValue = { text: '', picked: null, phone: '', phoneOpen: false }
+
+export function cleanName(name: string): string {
+  return name.trim().replace(/\s+/g, ' ')
+}
+
+/** A typed name that is not a chosen customer (a new customer on save). */
+export function isNewName(v: CustomerFieldValue): boolean {
+  return v.picked === null && cleanName(v.text) !== ''
+}
+
+/** `{ id }`, `{ name, phone? }` or undefined (blank = record without a name). */
+export function customerArg(v: CustomerFieldValue): KhataCustomerArg | undefined {
+  if (v.picked) return { id: v.picked.id }
+  const name = cleanName(v.text)
+  if (!name) return undefined
+  const phone = v.phone.trim()
+  return { name, ...(phone ? { phone } : {}) }
+}
+
+/** The name the record will carry, or null. */
+export function fieldName(v: CustomerFieldValue): string | null {
+  return v.picked?.name ?? (cleanName(v.text) || null)
 }
 
 /** Chip text: "Ali" or "Ali · 4567" (last 4 phone digits tell two Alis apart). */
@@ -23,14 +47,28 @@ export function customerChipLabel(c: Pick<KhataCustomer, 'name' | 'phone'>): str
   return tail ? `${c.name} · ${tail}` : c.name
 }
 
-/** Validate a picked customer for saving (null = ok). */
-export function customerProblem(c: PickedCustomer | null): string | null {
-  if (!c) return 'Choose the customer.'
-  if (c.kind === 'new') {
-    if (!pickedName(c)) return 'Write the customer name.'
-    return phoneProblem(c.phone, PHONE_MAX)
+/** Name prefix matches first, then other customers whose name contains the text. */
+export function rankCustomers<T extends Pick<KhataCustomer, '_id' | 'name' | 'normalizedName'>>(
+  prefix: readonly T[] | undefined,
+  recent: readonly T[] | undefined,
+  text: string,
+): T[] {
+  const key = customerNameKey(text)
+  if (!key) return [...(recent ?? [])]
+  const out = (prefix ?? []).filter((c) => c.normalizedName.startsWith(key))
+  const seen = new Set(out.map((c) => c._id))
+  for (const c of recent ?? []) {
+    if (!seen.has(c._id) && c.normalizedName.includes(key)) {
+      out.push(c)
+      seen.add(c._id)
+    }
   }
-  return null
+  return out
+}
+
+/** Validate the field for saving (null = ok). The name itself is optional. */
+export function customerProblem(v: CustomerFieldValue): string | null {
+  return isNewName(v) ? phoneProblem(v.phone, PHONE_MAX) : null
 }
 
 // ── Record sale: "Full payment received?" ──────────────────────────────────
@@ -40,10 +78,10 @@ export type SalePayment = {
   full:     boolean
   /** Canonical amount string; '' = 0. */
   received: string
-  customer: PickedCustomer | null
+  customer: CustomerFieldValue
 }
 
-export const FULL_PAYMENT: SalePayment = { full: true, received: '', customer: null }
+export const FULL_PAYMENT: SalePayment = { full: true, received: '', customer: EMPTY_CUSTOMER }
 
 export type SalePaymentErrors = { received?: string; customer?: string }
 

@@ -9,7 +9,7 @@ import { useOutbox } from '@/hooks/useOutbox'
 import { cn, formatDate, formatTime } from '@/lib/utils'
 import { btnDangerGhost, btnOutline, btnPrimary, btnSecondary, fieldError, fieldLabel } from '@/lib/ui'
 import { checkAmount } from '@/lib/amount'
-import { parseMoreThanBaqi, toPaisa } from '@/lib/khata'
+import { NO_NAME, parseMoreThanBaqi, toPaisa } from '@/lib/khata'
 import { entryAmount, entryDateMs, isKhataEntry, type OutboxEntry } from '@/lib/offline/types'
 import { pendingCategoryName, pendingEntryKindLabel, pendingEntryTitle } from '@/lib/pendingEntries'
 import type { Category } from '@/hooks/useCategories'
@@ -72,7 +72,7 @@ export default function PendingEntrySheet({ rowId, categories, onClose }: Pendin
   const singleItem = items.length === 1 ? items[0] : undefined
   const singleCategory = singleItem ? pendingCategoryName(entry, singleItem.categoryId, categories) : undefined
   const problemText = baqiNow !== null && khata
-    ? `${khata.customerName}'s Baqi is now ${money(baqiNow)}`
+    ? `${khata.customerName?.trim() ? `${khata.customerName.trim()}'s Baqi` : 'Baqi'} is now ${money(baqiNow)}`
     : entry.lastError?.message || 'This entry could not be synced.'
 
   const act = async (run: () => Promise<void>, success: string, after?: () => void) => {
@@ -195,7 +195,11 @@ export default function PendingEntrySheet({ rowId, categories, onClose }: Pendin
           )}
 
           <dl className="flex flex-col divide-y divide-border/60 rounded-3xl border border-border/70">
-            {khata && <DetailRow icon={<User size={18} />} label="Customer">{khata.customerName}</DetailRow>}
+            {khata && (
+              <DetailRow icon={<User size={18} />} label="Customer">
+                {khata.customerName?.trim() || <span className="text-muted-foreground">{NO_NAME}</span>}
+              </DetailRow>
+            )}
             <DetailRow icon={<CalendarDays size={18} />} label="Date">{formatDate(entryDateMs(entry))}</DetailRow>
             <DetailRow icon={<Clock size={18} />} label="Saved at">{formatTime(entry.createdAt)}</DetailRow>
             {singleItem && (

@@ -17,9 +17,11 @@ export function useKhataBadgeScope(): KhataBadgeScopeValue | null {
 
 /** "Baqi 3,000" (amber) / "Advance · Ali" / "Received · Ali" / "Udhaar · Ali". */
 export function badgeText(b: KhataBadge): { kind: 'baqi'; amount: number } | { kind: 'label'; text: string } {
-  if (b.role === 'payment') return { kind: 'label', text: `Received · ${b.customerName}` }
+  const name = (b.customerName as string | null | undefined)?.trim()
+  const withName = (label: string) => (name ? `${label} · ${name}` : label)
+  if (b.role === 'payment') return { kind: 'label', text: withName('Received') }
   if (b.kind === 'udhaar' && b.status === 'due' && b.remaining !== null && b.remaining > 0) {
     return { kind: 'baqi', amount: b.remaining }
   }
-  return { kind: 'label', text: `${b.kind === 'udhaar' ? 'Udhaar' : 'Advance'} · ${b.customerName}` }
+  return { kind: 'label', text: withName(b.kind === 'udhaar' ? 'Udhaar' : 'Advance') }
 }

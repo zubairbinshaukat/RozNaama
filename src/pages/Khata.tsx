@@ -7,11 +7,12 @@ import EmptyState from '@/components/shared/EmptyState'
 import LoadMoreButton from '@/components/dashboard/LoadMoreButton'
 import PendingEntrySheet from '@/components/modals/PendingEntrySheet'
 import CustomerSheet from '@/components/khata/CustomerSheet'
+import EntrySheet from '@/components/khata/EntrySheet'
 import AdvanceSheet from '@/components/khata/AdvanceSheet'
-import { rowAmount } from '@/components/khata/model'
+import { recordSub, rowAmount } from '@/components/khata/model'
 import { useViewAs } from '@/context/ViewAsContext'
 import { useCustomerSearch, useKhataOpenList, useKhataTotals, usePendingKhata } from '@/hooks/useKhata'
-import { phoneTail, sinceLabel, type KhataSegment } from '@/lib/khata'
+import { NO_NAME, phoneTail, type KhataSegment } from '@/lib/khata'
 import { entryAmount } from '@/lib/offline/types'
 import { pendingEntryTitle } from '@/lib/pendingEntries'
 import { btnPrimary, inputBase } from '@/lib/ui'
@@ -37,6 +38,7 @@ function KhataScreen() {
   const [segment, setSegment] = useState<KhataSegment>('due')
   const [search, setSearch] = useState('')
   const [customerId, setCustomerId] = useState<Id<'customers'> | null>(null)
+  const [entryId, setEntryId] = useState<Id<'khataEntries'> | null>(null)
   const [pendingId, setPendingId] = useState<string | null>(null)
   const [newAdvance, setNewAdvance] = useState(false)
   const searchId = useId()
@@ -195,18 +197,23 @@ function KhataScreen() {
               )
             ) : (
               <ul className="flex flex-col gap-2" aria-label={segment === 'due' ? 'Udhaar' : 'Advances'}>
-                {list.results.map((r) => (
-                  <Row
-                    key={r._id}
-                    title={r.customerName || 'Customer'}
-                    tail={phoneTail(r.customerPhone)}
-                    sub={`${r.itemLabel ? `${r.itemLabel} · ` : ''}${sinceLabel(r.openedAt)}`}
-                    amount={rowAmount(r)}
-                    amountLabel={r.status === 'booked' ? 'Held' : 'Baqi'}
-                    negative={r.status === 'due'}
-                    onOpen={() => setCustomerId(r.customerId)}
-                  />
-                ))}
+                {list.results.map((r) => {
+                  const id = (r as { customerId?: Id<'customers'> | null }).customerId ?? null
+                  const name = r.customerName?.trim() || null
+                  return (
+                    <Row
+                      key={r._id}
+                      title={name ?? NO_NAME}
+                      nameless={name === null}
+                      tail={name ? phoneTail(r.customerPhone) : null}
+                      sub={recordSub(r)}
+                      amount={rowAmount(r)}
+                      amountLabel={r.status === 'booked' ? 'Held' : 'Baqi'}
+                      negative={r.status === 'due'}
+                      onOpen={() => (id && name ? setCustomerId(id) : setEntryId(r._id))}
+                    />
+                  )
+                })}
               </ul>
             )}
             <LoadMoreButton status={list.status} onLoadMore={() => list.loadMore(20)} />
@@ -215,14 +222,17 @@ function KhataScreen() {
       </main>
 
       {customerId && <CustomerSheet customerId={customerId} onClose={() => setCustomerId(null)} />}
+      {entryId && <EntrySheet entryId={entryId} onClose={() => setEntryId(null)} />}
       {pendingId && <PendingEntrySheet rowId={pendingId} categories={[]} onClose={() => setPendingId(null)} />}
       {newAdvance && !isViewingOther && <AdvanceSheet onClose={() => setNewAdvance(false)} />}
     </div>
   )
 }
 
-function Row({ title, tail, sub, amount, amountLabel, negative, onOpen }: {
+function Row({ title, nameless = false, tail, sub, amount, amountLabel, negative, onOpen }: {
   title: string
+  /** A record without a name: muted "No name". */
+  nameless?: boolean
   tail: string | null
   sub: string
   amount: number
@@ -238,7 +248,7 @@ function Row({ title, tail, sub, amount, amountLabel, negative, onOpen }: {
         className="w-full flex items-center gap-3 min-h-15 px-4 py-2.5 rounded-2xl border border-border/70 bg-card text-left hover:bg-muted/40 active:scale-[0.97] transition-all"
       >
         <span className="flex-1 min-w-0">
-          <span className="block text-base font-semibold text-foreground truncate">
+          <span className={cn('block text-base font-semibold truncate', nameless ? 'text-muted-foreground' : 'text-foreground')}>
             {title}{tail && <span className="font-medium text-muted-foreground"> · {tail}</span>}
           </span>
           <span className="block text-[13px] text-muted-foreground truncate">{sub}</span>

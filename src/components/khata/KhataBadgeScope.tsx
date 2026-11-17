@@ -5,8 +5,15 @@ import { dateKeyToLocalMs } from '@/lib/dayGroups'
 import type { KhataBadge } from '@/lib/khata'
 import { endOfDay } from '@/lib/utils'
 import { KhataBadgeContext, type KhataBadgeScopeValue } from './badgeContext'
+import type { Id } from '../../../convex/_generated/dataModel'
 
 const CustomerSheet = lazy(() => import('./CustomerSheet'))
+const EntrySheet = lazy(() => import('./EntrySheet'))
+
+/** Records without a name have no customer: they open the record sheet instead. */
+function customerIdOf(b: KhataBadge): Id<'customers'> | null {
+  return (b as { customerId?: Id<'customers'> | null }).customerId ?? null
+}
 
 const EMPTY = new Map<string, KhataBadge>()
 
@@ -42,12 +49,20 @@ export default function KhataBadgeScope({ dateKeys, onSheetOpenChange, children 
       {children}
       {open && (
         <Suspense fallback={<SheetFallback />}>
-          <CustomerSheet
-            customerId={open.badge.customerId}
-            focusEntryId={open.badge.entryId}
-            onOpenSale={() => { const s = open.openSale; setOpen(null); s() }}
-            onClose={() => setOpen(null)}
-          />
+          {customerIdOf(open.badge) ? (
+            <CustomerSheet
+              customerId={customerIdOf(open.badge)!}
+              focusEntryId={open.badge.entryId}
+              onOpenSale={() => { const s = open.openSale; setOpen(null); s() }}
+              onClose={() => setOpen(null)}
+            />
+          ) : (
+            <EntrySheet
+              entryId={open.badge.entryId}
+              onOpenSale={() => { const s = open.openSale; setOpen(null); s() }}
+              onClose={() => setOpen(null)}
+            />
+          )}
         </Suspense>
       )}
     </KhataBadgeContext.Provider>

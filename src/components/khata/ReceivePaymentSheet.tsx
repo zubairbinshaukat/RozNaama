@@ -13,7 +13,7 @@ import { getErrorMessage } from '@/lib/errors'
 import { toPaisa } from '@/lib/khata'
 import { btnPrimary, btnSecondary, chip, chipActive, chipIdle, fieldError, fieldLabel } from '@/lib/ui'
 import { clampSaleDateToTodayMs, cn, startOfDay } from '@/lib/utils'
-import { entryTitle, type EntryTarget } from './model'
+import { displayName, entryTitle, nameSuffix, type EntryTarget } from './model'
 
 interface ReceivePaymentSheetProps {
   target:  EntryTarget
@@ -59,7 +59,7 @@ export default function ReceivePaymentSheet({ target, onClose, onDone }: Receive
         amount:       check.value,
         receivedAt:   clampSaleDateToTodayMs(dateMs),
         customerName: target.customerName,
-        customerId:   target.customerId,
+        ...(target.customerId ? { customerId: target.customerId } : {}),
         entryKind:    target.kind,
         recognition:  target.recognition,
       })
@@ -67,10 +67,10 @@ export default function ReceivePaymentSheet({ target, onClose, onDone }: Receive
         const left = out.result.remaining
         showToast(
           left === null || target.status === 'booked'
-            ? `Received ${money(check.value)} (${target.customerName})`
+            ? `Received ${money(check.value)}${nameSuffix(target.customerName)}`
             : left > 0
-              ? `Received ${money(check.value)} · Baqi ${money(left)} (${target.customerName})`
-              : `Received ${money(check.value)} · ${target.customerName} paid in full`,
+              ? `Received ${money(check.value)} · Baqi ${money(left)}${nameSuffix(target.customerName)}`
+              : `Received ${money(check.value)} · ${target.customerName ? `${target.customerName} paid in full` : 'Paid in full'}`,
           'success',
         )
       } else {
@@ -93,7 +93,7 @@ export default function ReceivePaymentSheet({ target, onClose, onDone }: Receive
       <SheetHeader
         titleId={titleId}
         title="Receive payment"
-        subtitle={<>{target.customerName} · {entryTitle(target)}</>}
+        subtitle={<>{displayName(target.customerName)} · {entryTitle(target)}</>}
         icon={<HandCoins size={18} />}
         onClose={close}
         closeDisabled={saving}

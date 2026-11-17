@@ -17,6 +17,18 @@ export type KhataCustomerDetail = NonNullable<FunctionReturnType<typeof api.khat
 export type KhataDetailEntry = KhataCustomerDetail['entries'][number]
 export type KhataBadge = FunctionReturnType<typeof api.khata.badgesForRange>[number]
 export type KhataSegment = 'due' | 'booked'
+/** khata.entryDetail: one record with its payments and (optional) customer. */
+export type KhataEntryDetail = NonNullable<FunctionReturnType<typeof api.khata.entryDetail>>
+/** A record as the action sheets need it (entry doc + remaining). */
+export type KhataRecord = KhataDetailEntry | (KhataEntryDetail['entry'] & { payments?: KhataDetailEntry['payments'] })
+
+/** How a khata record without a customer is shown. */
+export const NO_NAME = 'No name'
+
+/** The customer's name, or null for a record without one. */
+export function nameOrNull(name: string | null | undefined): string | null {
+  return name?.trim() || null
+}
 
 /** Same as the server's defaults (no row = off, both 'delivery'). */
 export const DEFAULT_SHOP_SETTINGS: ShopSettings = {

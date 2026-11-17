@@ -50,12 +50,12 @@ export type ExpenseResult = {
 
 export type Recognition = 'delivery' | 'cash'
 
-/** An existing customer, or find-or-create by name (server side). */
+/** An existing customer, or find-or-create by name (server side). Omitted = a record without a name. */
 export type KhataCustomerArg = { id: Id<'customers'> } | { name: string; phone?: string }
 
 /** `khata.recordSale` args without `clientRequestId`. `recognition` is always sent. */
 export type KhataSaleArgs = {
-  customer:    KhataCustomerArg
+  customer?:   KhataCustomerArg
   items:       SaleItemArgs[]
   sessionDate: number
   receivedNow: number
@@ -64,7 +64,7 @@ export type KhataSaleArgs = {
 
 /** `khata.openAdvance` args without `clientRequestId`. */
 export type KhataAdvanceArgs = {
-  customer:    KhataCustomerArg
+  customer?:   KhataCustomerArg
   amount:      number
   receivedAt:  number
   total?:      number
@@ -87,7 +87,8 @@ export type KhataPaymentArgs = {
  * from the cached recognition), so totals stay right while it waits.
  */
 export type KhataMeta = {
-  customerName:   string
+  /** Absent / empty = a record without a name (shown as 'No name'). */
+  customerName?:  string
   countedAmount:  number
   /** Kind of the record a payment is for (names the pending sale row). */
   entryKind?:     'udhaar' | 'advance'
@@ -207,25 +208,26 @@ function isExpenseArgs(v: unknown): v is ExpenseArgs {
 const isRecognitionValue = (v: unknown): v is Recognition => v === 'delivery' || v === 'cash'
 const isOptionalNumber = (v: unknown) => v === undefined || isFiniteNumber(v)
 
-function isCustomerArg(v: unknown): v is KhataCustomerArg {
+function isOptionalCustomerArg(v: unknown): v is KhataCustomerArg | undefined {
+  if (v === undefined) return true
   if (!isRecord(v)) return false
   if (typeof v.id === 'string') return true
   return typeof v.name === 'string' && isOptionalString(v.phone)
 }
 
 function isKhataMeta(v: unknown): v is KhataMeta {
-  return isRecord(v) && typeof v.customerName === 'string' && isFiniteNumber(v.countedAmount) &&
+  return isRecord(v) && isOptionalString(v.customerName) && isFiniteNumber(v.countedAmount) &&
     (v.entryKind === undefined || v.entryKind === 'udhaar' || v.entryKind === 'advance') &&
     isOptionalString(v.customerId)
 }
 
 function isKhataSaleArgs(v: unknown): v is KhataSaleArgs {
-  return isRecord(v) && isCustomerArg(v.customer) && isSaleArgs({ items: v.items, sessionDate: v.sessionDate }) &&
+  return isRecord(v) && isOptionalCustomerArg(v.customer) && isSaleArgs({ items: v.items, sessionDate: v.sessionDate }) &&
     isFiniteNumber(v.receivedNow) && isRecognitionValue(v.recognition)
 }
 
 function isKhataAdvanceArgs(v: unknown): v is KhataAdvanceArgs {
-  return isRecord(v) && isCustomerArg(v.customer) && isFiniteNumber(v.amount) && isFiniteNumber(v.receivedAt) &&
+  return isRecord(v) && isOptionalCustomerArg(v.customer) && isFiniteNumber(v.amount) && isFiniteNumber(v.receivedAt) &&
     isOptionalNumber(v.total) && isOptionalString(v.itemLabel) && isOptionalNumber(v.dueDate) &&
     isOptionalString(v.note) && isRecognitionValue(v.recognition)
 }
@@ -270,6 +272,17 @@ export function entryDateMs(entry: OutboxEntry): number {
   }
 }
 
+/** "Ali · Udhaar", or just "Udhaar" for a record without a name. */
+function khataItemName(name: string | undefined, label: string): string {
+  const n = name?.trim()
+  return n ? `${n} · ${label}` : label
+}
+
+/** The saved customer name of a khata entry, or null for a record without a name. */
+export function khataEntryName(entry: KhataOutboxEntry): string | null {
+  return entry.khata.customerName?.trim() || null
+}
+
 /**
  * Sale items this entry adds to the day list while it waits (what the
  * server will record as a sale session):
@@ -290,13 +303,13 @@ export function entryOverlayItems(entry: OutboxEntry): SaleItemArgs[] {
       if (!(amount > 0)) return []
       const first = entry.args.items[0]?.categoryId
       const shared = first !== undefined && entry.args.items.every((i) => i.categoryId === first) ? first : undefined
-      return [{ productName: `${entry.khata.customerName} · Udhaar`, amount, ...(shared ? { categoryId: shared } : {}) }]
+      return [{ productName: khataItemName(entry.khata.customerName, 'Udhaar'), amount, ...(shared ? { categoryId: shared } : {}) }]
     }
     default: {
       const amount = entry.khata.countedAmount
       if (!(amount > 0)) return []
       const label = entry.kind === 'khataAdvance' || entry.khata.entryKind === 'advance' ? 'Advance' : 'Udhaar'
-      return [{ productName: `${entry.khata.customerName} · ${label}`, amount }]
+      return [{ productName: khataItemName(entry.khata.customerName, label), amount }]
     }
   }
 }

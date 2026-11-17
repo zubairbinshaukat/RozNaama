@@ -21,6 +21,7 @@ import {
   customerDoc,
   khataBadge,
   khataDetailEntry,
+  khataEntryDetail,
   khataOpenRow,
   khataStatusValidator,
   khataTotalsValue,
@@ -44,6 +45,7 @@ import {
   recordKhataSale,
   removeEntry as removeEntryModel,
   removePayment as removePaymentModel,
+  setEntryCustomer as setEntryCustomerModel,
   updateCustomer as updateCustomerModel,
   updateEntry as updateEntryModel,
 } from './model/khata'
@@ -79,7 +81,8 @@ function makeLookups(ctx: QueryCtx, userId: Id<'users'>) {
   const customers = new Map<Id<'customers'>, Promise<Doc<'customers'> | null>>()
   const categories = new Map<Id<'categories'>, Promise<boolean>>()
   return {
-    customer(id: Id<'customers'>) {
+    customer(id: Id<'customers'> | undefined): Promise<Doc<'customers'> | null> {
+      if (id === undefined) return Promise.resolve(null)
       let p = customers.get(id)
       if (!p) {
         p = getOwned(ctx, 'customers', id, userId)
@@ -106,6 +109,13 @@ function withCategory<T extends { categoryId?: Id<'categories'> }>(entry: T, liv
   if (live === undefined) delete out.categoryId
   else out.categoryId = live
   return out
+}
+
+/** Copy of a row with `customerId` as `Id | null` (null = nameless record). */
+function withNullableCustomer<T extends { customerId?: Id<'customers'> }>(
+  row: T,
+): Omit<T, 'customerId'> & { customerId: Id<'customers'> | null } {
+  return { ...row, customerId: row.customerId ?? null }
 }
 
 // ─── Queries ────────────────────────────────────────────────────────────────
@@ -145,9 +155,9 @@ export const listOpen = authedQuery({
     const rows = await Promise.all(page.page.map(async (entry) => {
       const customer = await lookups.customer(entry.customerId)
       return {
-        ...withCategory(entry, await lookups.liveCategory(entry.categoryId)),
+        ...withNullableCustomer(withCategory(entry, await lookups.liveCategory(entry.categoryId))),
         remaining:    remainingOf(entry),
-        customerName: customer?.name ?? '',
+        customerName: customer?.name ?? null,
         ...(customer?.phone !== undefined ? { customerPhone: customer.phone } : {}),
       }
     }))
@@ -221,9 +231,11 @@ export const customerDetail = authedQuery({
           .order('desc')
           .take(DETAIL_PAYMENT_LIMIT + 1)
         return {
-          ...withCategory(entry, await lookups.liveCategory(entry.categoryId)),
+          ...withNullableCustomer(withCategory(entry, await lookups.liveCategory(entry.categoryId))),
           remaining:      remainingOf(entry),
-          payments:       payments.slice(0, DETAIL_PAYMENT_LIMIT).filter((p) => p.userId === user._id),
+          payments:       payments.slice(0, DETAIL_PAYMENT_LIMIT)
+            .filter((p) => p.userId === user._id)
+            .map(withNullableCustomer),
           paymentsCapped: payments.length > DETAIL_PAYMENT_LIMIT,
         }
       }),
@@ -291,14 +303,44 @@ export const badgesForRange = authedQuery({
         saleSessionId: link.saleSessionId,
         role:          link.role,
         entryId:       entry._id,
-        customerId:    entry.customerId,
+        customerId:    entry.customerId ?? null,
         kind:          entry.kind,
         status:        entry.status,
         remaining:     remainingOf(entry),
-        customerName:  customer?.name ?? '',
+        customerName:  customer?.name ?? null,
       }
     }))
     return rows.filter((r) => r !== null)
+  },
+})
+
+/**
+ * One entry (named or nameless) with up to 200 payments (newest first) and
+ * its customer (null when nameless). null when missing / not the user's.
+ */
+export const entryDetail = authedQuery({
+  args: { entryId: v.id('khataEntries') },
+  returns: v.union(v.null(), khataEntryDetail),
+  handler: async (ctx, args) => {
+    const user = ctx.user
+    if (!user) return null
+    const entry = await getOwned(ctx, 'khataEntries', args.entryId, user._id)
+    if (!entry) return null
+    const lookups = makeLookups(ctx, user._id)
+    const payments = await ctx.db
+      .query('khataPayments')
+      .withIndex('by_entryId_receivedAt', (q) => q.eq('entryId', entry._id))
+      .order('desc')
+      .take(DETAIL_PAYMENT_LIMIT + 1)
+    return {
+      entry: {
+        ...withNullableCustomer(withCategory(entry, await lookups.liveCategory(entry.categoryId))),
+        remaining: remainingOf(entry),
+      },
+      payments:       payments.slice(0, DETAIL_PAYMENT_LIMIT).filter((p) => p.userId === user._id).map(withNullableCustomer),
+      paymentsCapped: payments.length > DETAIL_PAYMENT_LIMIT,
+      customer:       await lookups.customer(entry.customerId),
+    }
   },
 })
 
@@ -310,7 +352,7 @@ export const badgesForRange = authedQuery({
  */
 export const recordSale = authedMutation({
   args: {
-    customer:        customerInput,
+    customer:        v.optional(customerInput), // omitted / blank name → nameless record
     items:           v.array(khataItemInput),
     sessionDate:     v.number(),
     receivedNow:     v.number(),
@@ -328,7 +370,7 @@ export const recordSale = authedMutation({
 /** Advance / booking: money received before handover. Offline-safe with `clientRequestId`. */
 export const openAdvance = authedMutation({
   args: {
-    customer:        customerInput,
+    customer:        v.optional(customerInput), // omitted / blank name → nameless record
     amount:          v.number(),
     receivedAt:      v.number(),
     total:           v.optional(v.number()),
@@ -443,6 +485,20 @@ export const updateCustomer = authedMutation({
     await updateCustomerModel(ctx, ctx.user._id, args)
     return null
   },
+})
+
+/**
+ * Attach a customer to a record (by id, or find-or-create by name), move it to
+ * another customer, or detach it (null / blank name). Closed records allowed
+ * (history only). Online only.
+ */
+export const setEntryCustomer = authedMutation({
+  args: {
+    entryId:  v.id('khataEntries'),
+    customer: v.union(customerInput, v.null()),
+  },
+  returns: v.object({ customerId: v.union(v.id('customers'), v.null()) }),
+  handler: async (ctx, args) => setEntryCustomerModel(ctx, ctx.user._id, args),
 })
 
 /** Hide a customer without open records (online only). */

@@ -72,9 +72,15 @@ type ValidCustomerInput =
   | { kind: 'id'; id: Id<'customers'> }
   | { kind: 'name'; name: string; key: string; phone: string | undefined }
 
-/** Validate a customer reference without writing (name/phone normalised). */
-function validateCustomerInput(input: CustomerInput): ValidCustomerInput {
+/**
+ * Validate an optional customer reference without writing (name/phone
+ * normalised). No customer, or a name that is blank after trimming → null
+ * (a nameless record; a phone without a name is dropped).
+ */
+function validateCustomerInput(input: CustomerInput | null | undefined): ValidCustomerInput | null {
+  if (input === null || input === undefined) return null
   if ('id' in input) return { kind: 'id', id: input.id }
+  if (input.name.trim().length === 0) return null
   const name = normalizeCustomerName(input.name)
   return { kind: 'name', name, key: customerNameKey(name), phone: normalizePhone(input.phone) }
 }
@@ -98,9 +104,10 @@ export async function findCustomerByKey(
 async function resolveCustomer(
   ctx: MutationCtx,
   userId: Id<'users'>,
-  input: ValidCustomerInput,
+  input: ValidCustomerInput | null,
   now: number,
-): Promise<Doc<'customers'>> {
+): Promise<Doc<'customers'> | null> {
+  if (input === null) return null
   let customer: Doc<'customers'> | null
   if (input.kind === 'id') {
     customer = await requireOwned(ctx, 'customers', input.id, userId, KHATA_MESSAGES.CUSTOMER_NOT_FOUND)
@@ -138,10 +145,16 @@ async function requireEntry(
   return requireOwned(ctx, 'khataEntries', entryId, userId, KHATA_MESSAGES.ENTRY_NOT_FOUND)
 }
 
-async function customerOf(ctx: MutationCtx, entry: KhataEntry): Promise<Doc<'customers'>> {
+/** The entry's customer, or null for a nameless entry (or a customer row that is gone). */
+async function customerOf(ctx: MutationCtx, entry: KhataEntry): Promise<Doc<'customers'> | null> {
+  if (entry.customerId === undefined) return null
   const customer = await ctx.db.get('customers', entry.customerId)
-  if (!customer || customer.userId !== entry.userId) throw notFoundError(KHATA_MESSAGES.CUSTOMER_NOT_FOUND)
-  return customer
+  return customer && customer.userId === entry.userId ? customer : null
+}
+
+/** "Ali · Udhaar" for a named record, "Udhaar" for a nameless one. */
+function labelWithName(customer: Doc<'customers'> | null, label: string): string {
+  return customer ? `${customer.name} · ${label}` : label
 }
 
 /** Dates of payments / handover / cancel may not be before the entry's opening day. */
@@ -173,8 +186,8 @@ async function liveCategory(
   return (await getOwned(ctx, 'categories', categoryId, userId)) ? categoryId : undefined
 }
 
-function cashSessionName(entry: Pick<KhataEntry, 'kind'>, customer: Doc<'customers'>): string {
-  return `${customer.name} · ${entry.kind === 'udhaar' ? 'Udhaar' : 'Advance'}`
+function cashSessionName(entry: Pick<KhataEntry, 'kind'>, customer: Doc<'customers'> | null): string {
+  return labelWithName(customer, entry.kind === 'udhaar' ? 'Udhaar' : 'Advance')
 }
 
 /** One sale session (1 item) linked to an entry. Goes through recordSaleSession (totals hooks). */
@@ -204,7 +217,7 @@ async function createLinkedSession(
 async function insertPayment(
   ctx: MutationCtx,
   entry: KhataEntry,
-  customer: Doc<'customers'>,
+  customer: Doc<'customers'> | null,
   amount: number,
   receivedAt: number,
 ): Promise<{ paymentId: Id<'khataPayments'>; sessionId?: Id<'saleSessions'> }> {
@@ -261,7 +274,8 @@ function labelForItems(items: { productName: string }[]): string | undefined {
 // ─── recordSale (Udhaar) ────────────────────────────────────────────────────
 
 export type RecordKhataSaleInput = {
-  customer:         CustomerInput
+  /** Optional: no customer / blank name → nameless record. */
+  customer?:        CustomerInput | null
   items:            SaleItemInput[]
   sessionDate:      number
   receivedNow:      number
@@ -331,7 +345,7 @@ export async function recordKhataSale(
 
   const entryId = await insertEntry(ctx, {
     userId,
-    customerId:  customer._id,
+    customerId:  customer?._id,
     kind:        'udhaar',
     status:      'due',
     recognition,
@@ -380,7 +394,8 @@ export async function recordKhataSale(
 // ─── openAdvance ────────────────────────────────────────────────────────────
 
 export type OpenAdvanceInput = {
-  customer:         CustomerInput
+  /** Optional: no customer / blank name → nameless record. */
+  customer?:        CustomerInput | null
   amount:           number
   receivedAt:       number
   total?:           number
@@ -424,7 +439,7 @@ export async function openAdvance(
   const customer = await resolveCustomer(ctx, userId, customerInput, now)
   const entryId = await insertEntry(ctx, {
     userId,
-    customerId: customer._id,
+    customerId: customer?._id,
     kind:       'advance',
     status:     'booked',
     recognition,
@@ -570,7 +585,7 @@ export async function completeAdvance(
       ctx,
       userId,
       { entryId: entry._id, role: 'delivery' },
-      { productName: entry.itemLabel ?? `${customer.name} · Order`, amount: finalTotal, categoryId },
+      { productName: entry.itemLabel ?? labelWithName(customer, 'Order'), amount: finalTotal, categoryId },
       deliveredAt,
     )
   }
@@ -627,7 +642,7 @@ export async function cancelAdvance(
         expenseId = (await recordExpense(ctx, userId, {
           amount:      paid,
           expenseDate: at,
-          note:        `Advance refund · ${customer.name}`.slice(0, NOTE_MAX),
+          note:        (customer ? `Advance refund · ${customer.name}` : 'Advance refund').slice(0, NOTE_MAX),
         })).expenseId
       }
       await ctx.db.insert('khataPayments', {
@@ -648,7 +663,7 @@ export async function cancelAdvance(
       userId,
       { entryId: entry._id, role: 'delivery' },
       {
-        productName: `Advance kept · ${customer.name}`,
+        productName: customer ? `Advance kept · ${customer.name}` : 'Advance kept',
         amount:      paid,
         categoryId:  await liveCategory(ctx, userId, entry.categoryId),
       },
@@ -803,6 +818,40 @@ export async function removeEntry(
   }
   if (entry.saleSessionId !== undefined) await removeKhataSession(ctx, userId, entry.saleSessionId)
   await deleteEntry(ctx, entry)
+}
+
+// ─── setEntryCustomer ───────────────────────────────────────────────────────
+
+/** Payments rewritten when an entry changes customer (≥ cap + refunds). */
+const ENTRY_PAYMENTS_MOVE_LIMIT = MAX_KHATA_PAYMENTS_PER_ENTRY + 50
+
+/**
+ * Attach a customer to an entry (find-or-create by name, or by id), move it
+ * to another customer, or detach it (null / blank name). Works on closed
+ * entries too (history only). The entry's open balance moves between the
+ * customers' aggregates (onEntryChange); khataTotals is unchanged. Sale names
+ * already written ("Ali · Udhaar") are not renamed.
+ */
+export async function setEntryCustomer(
+  ctx: MutationCtx,
+  userId: Id<'users'>,
+  input: { entryId: Id<'khataEntries'>; customer: CustomerInput | null },
+): Promise<{ customerId: Id<'customers'> | null }> {
+  const entry = await requireEntry(ctx, userId, input.entryId)
+  const customerInput = validateCustomerInput(input.customer)
+  const customer = await resolveCustomer(ctx, userId, customerInput, Date.now())
+  const customerId = customer?._id
+  if (customerId === entry.customerId) return { customerId: customerId ?? null }
+
+  await patchEntry(ctx, entry, { customerId })
+  const payments = await ctx.db
+    .query('khataPayments')
+    .withIndex('by_entryId_receivedAt', (q) => q.eq('entryId', entry._id))
+    .take(ENTRY_PAYMENTS_MOVE_LIMIT)
+  for (const payment of payments) {
+    if (payment.userId === userId) await ctx.db.patch('khataPayments', payment._id, { customerId })
+  }
+  return { customerId: customerId ?? null }
 }
 
 // ─── Customers ──────────────────────────────────────────────────────────────

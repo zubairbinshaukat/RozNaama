@@ -8,12 +8,14 @@ import { useKhataActions } from '@/hooks/useKhata'
 import { OFFLINE_EDIT_MESSAGE, useCanEditOnline } from '@/hooks/useCanEditOnline'
 import { checkAmount } from '@/lib/amount'
 import { getErrorMessage } from '@/lib/errors'
-import { CUSTOMER_NAME_MAX, KHATA_ITEM_LABEL_MAX, PHONE_MAX, phoneProblem, toPaisa, type KhataCustomer, type KhataDetailEntry } from '@/lib/khata'
+import { CUSTOMER_NAME_MAX, KHATA_ITEM_LABEL_MAX, PHONE_MAX, phoneProblem, toPaisa, type KhataCustomer } from '@/lib/khata'
 import { NOTE_MAX } from '@/lib/constants'
 import { btnPrimary, btnSecondary, fieldError, fieldLabel, inputBase, inputInvalid } from '@/lib/ui'
 import { cn } from '@/lib/utils'
 import DueDateField from './DueDateField'
-import { entryTitle } from './model'
+import { entryTitle, type EntryLike } from './model'
+
+type EditableEntry = EntryLike & { note?: string; dueDate?: number }
 
 function Footer({ saving, onCancel, onSave, label }: { saving: boolean; onCancel: () => void; onSave: () => void; label: string }) {
   const canEdit = useCanEditOnline()
@@ -33,7 +35,7 @@ function Footer({ saving, onCancel, onSave, label }: { saving: boolean; onCancel
 }
 
 /** Edit a record: bill (when it has one or is booked), item, note, ready-by date. Online only. */
-export function EditEntrySheet({ entry, onClose }: { entry: KhataDetailEntry; onClose: () => void }) {
+export function EditEntrySheet({ entry, onClose }: { entry: EditableEntry; onClose: () => void }) {
   const titleId = useId()
   const uid = useId()
   const [total, setTotal] = useState(entry.total !== undefined ? String(entry.total) : '')

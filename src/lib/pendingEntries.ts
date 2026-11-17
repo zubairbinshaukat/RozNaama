@@ -1,5 +1,6 @@
 import type { Category } from '@/hooks/useCategories'
-import type { OutboxEntry } from '@/lib/offline/types'
+import { khataEntryName, type OutboxEntry } from '@/lib/offline/types'
+import { NO_NAME } from '@/lib/khata'
 
 /** Category name for a pending item: live / snapshot categories, else the name saved with the entry. */
 export function pendingCategoryName(
@@ -32,9 +33,10 @@ export function unsyncedSignOutMessage(n: number): string {
 /** Short title for an entry: first product (+N more) or the expense note. */
 export function pendingEntryTitle(entry: OutboxEntry): string {
   if (entry.kind === 'expense') return entry.args.note?.trim() || 'Expense'
-  if (entry.kind === 'khataAdvance') return `Advance · ${entry.khata.customerName}`
-  if (entry.kind === 'khataPayment') return `Received · ${entry.khata.customerName}`
-  if (entry.kind === 'khataSale') return `Udhaar · ${entry.khata.customerName}`
+  if (entry.kind === 'khataAdvance' || entry.kind === 'khataPayment' || entry.kind === 'khataSale') {
+    const label = entry.kind === 'khataAdvance' ? 'Advance' : entry.kind === 'khataPayment' ? 'Received' : 'Udhaar'
+    return `${label} · ${khataEntryName(entry) ?? NO_NAME}`
+  }
   const [first, ...rest] = entry.args.items
   if (!first) return 'Sale'
   return rest.length > 0 ? `${first.productName} +${rest.length} more` : first.productName

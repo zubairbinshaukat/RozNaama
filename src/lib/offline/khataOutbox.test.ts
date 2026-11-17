@@ -76,6 +76,24 @@ describe('khata outbox entries', () => {
     expect(p.kind === 'khataPayment' && p.args).toEqual({ entryId: ENTRY, amount: 1000, receivedAt: DAY })
   })
 
+  it('a record without a name: no customer sent, parses back, overlay says "Udhaar"', () => {
+    const e = buildEntry(OWNER, 'ks-0', {
+      kind: 'khataSale',
+      args: { customer: { name: '   ' }, customerName: '  ', items: [{ productName: 'Suit', amount: 6000 }], sessionDate: DAY, receivedNow: 1000, recognition: 'cash' },
+    }, 10)
+    expect(e.kind === 'khataSale' && 'customer' in e.args).toBe(false)
+    expect(e.kind === 'khataSale' && 'customerName' in e.khata).toBe(false)
+    expect(parseOutboxEntry(JSON.parse(JSON.stringify(e)))).toEqual(e)
+    expect(pendingEntryTitle(e)).toBe('Udhaar · No name')
+    const feed = applyPendingToFeed([], [e], { startKey: null, endKey: null, isDone: true })
+    expect(feed[0]?.sessions[0]?.items[0]?.productName).toBe('Udhaar')
+    const a = buildEntry(OWNER, 'ka-0', {
+      kind: 'khataAdvance', args: { amount: 500, receivedAt: DAY, recognition: 'delivery' },
+    }, 10)
+    expect(parseOutboxEntry(JSON.parse(JSON.stringify(a)))).toEqual(a)
+    expect(pendingEntryTitle(a)).toBe('Advance · No name')
+  })
+
   it('rejects unknown kinds / versions and malformed khata args', () => {
     const e = udhaar('delivery') as unknown as Record<string, unknown>
     expect(parseOutboxEntry({ ...e, kind: 'khataSomethingNew' })).toBeNull()

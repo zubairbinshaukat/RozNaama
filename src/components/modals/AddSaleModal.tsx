@@ -32,7 +32,7 @@ import {
   customerProblem,
   FULL_PAYMENT,
   isUdhaarSale,
-  pickedName,
+  fieldName,
   receivedValue,
   type SalePayment,
   type SalePaymentErrors,
@@ -238,12 +238,13 @@ export default function AddSaleModal({ onClose }: AddSaleModalProps) {
       const remember = () => recordSaleProducts(userId, items.map((i) => ({
         name: i.productName, amount: i.amount, categoryId: i.categoryId,
       })))
-      if (khataOn && payment.customer && isUdhaarSale(payment, total)) {
-        const name = pickedName(payment.customer)
+      if (khataOn && isUdhaarSale(payment, total)) {
+        const name = fieldName(payment.customer)
+        const customer = customerArg(payment.customer)
         const categoryLabels = labelsFor(items, categories)
         const udhaar = await submitKhataSale({
-          customer: customerArg(payment.customer),
-          customerName: name,
+          ...(customer ? { customer } : {}),
+          ...(name ? { customerName: name } : {}),
           items: items.map((i) => ({
             productName: i.productName,
             amount:      i.amount,
@@ -257,7 +258,7 @@ export default function AddSaleModal({ onClose }: AddSaleModalProps) {
         })
         remember()
         if (udhaar.status === 'saved') {
-          showToast(`Saved · Baqi ${money(udhaar.result.remaining)} (${name})`, 'success')
+          showToast(`Saved · Baqi ${money(udhaar.result.remaining)}${name ? ` (${name})` : ''}`, 'success')
         } else {
           const t = queuedToast(udhaar.problem)
           showToast(t.message, t.type)
