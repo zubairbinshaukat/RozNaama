@@ -27,13 +27,14 @@ import { stream } from 'convex-helpers/server/stream'
 import schema from './schema'
 import type { Doc } from './_generated/dataModel'
 import type { QueryCtx } from './_generated/server'
-import { adminQuery } from './lib/functions'
-import { paginated } from './lib/returnValidators'
+import { adminMutation, adminQuery } from './lib/functions'
+import { paginated, recognitionValidator, shopSettingsValue } from './lib/returnValidators'
 import { DEFAULT_TIME_ZONE, normalizeTimeZone } from './lib/time'
 import {
   adminWindows,
   allTimeSales,
   dayBuckets,
+  khataEnabledFor,
   lastActivityAt,
   latestRecord,
   matchesSearch,
@@ -41,7 +42,8 @@ import {
   weekStartKey,
   type AdminWindows,
 } from './model/adminStats'
-import { validationError } from './lib/errors'
+import { notFoundError, validationError } from './lib/errors'
+import { getShopSettings, upsertShopSettings } from './model/settings'
 import { totalsGate } from './model/totals'
 
 /** Max users per overview page (numItems is clamped to 1..this). */
@@ -164,16 +166,19 @@ const listRow = v.object({
   monthSales:     v.number(),
   allTimeSales:   v.number(),
   totalsReady:    v.boolean(),
+  /** Advance & Udhaar turned on in their shop settings. */
+  khataEnabled:   v.optional(v.boolean()),
   /** A scan cap was hit: month / all-time sales are lower bounds. */
   partial:        v.boolean(),
 })
 
 async function listRowFor(ctx: QueryCtx, user: Doc<'users'>, w: AdminWindows, nowMs: number) {
-  const [month, allTime, last, ready] = await Promise.all([
+  const [month, allTime, last, ready, khata] = await Promise.all([
     dayBuckets(ctx, user._id, w.timeZone, w.monthStartKey, w.todayKey, LIST_SCAN_CAP),
     allTimeSales(ctx, user._id, LIST_SCAN_CAP),
     lastActivityAt(ctx, user._id, nowMs),
     totalsGate(ctx, user._id),
+    khataEnabledFor(ctx, user._id),
   ])
   return {
     _id:            user._id,
@@ -185,6 +190,7 @@ async function listRowFor(ctx: QueryCtx, user: Doc<'users'>, w: AdminWindows, no
     monthSales:     sumBuckets(month.days, w.monthStartKey, w.todayKey).sales,
     allTimeSales:   allTime.total,
     totalsReady:    ready !== null,
+    khataEnabled:   khata,
     partial:        month.partial || allTime.partial,
   }
 }
@@ -276,6 +282,8 @@ const watchRow = v.object({
   week:  salesExpenses,
   /** 1st of this month → today. */
   month: salesExpenses,
+  /** Advance & Udhaar turned on in their shop settings. */
+  khataEnabled: v.optional(v.boolean()),
   /** A scan cap was hit: week / month numbers are lower bounds. */
   partial: v.boolean(),
 })
@@ -310,10 +318,11 @@ export const watchSummaries = adminQuery({
       seen.add(id)
       const user = await ctx.db.get('users', id)
       if (!user) continue
-      const [b, latest, last] = await Promise.all([
+      const [b, latest, last, khata] = await Promise.all([
         dayBuckets(ctx, id, tz, lowKey, w.todayKey, WATCH_SCAN_CAP),
         latestRecord(ctx, id, nowMs),
         lastActivityAt(ctx, id, nowMs),
+        khataEnabledFor(ctx, id),
       ])
       const pick = (low: string) => {
         const s = sumBuckets(b.days, low, w.todayKey)
@@ -328,9 +337,50 @@ export const watchSummaries = adminQuery({
         today:          pick(w.todayKey),
         week:           pick(weekKey),
         month:          pick(w.monthStartKey),
+        khataEnabled:   khata,
         partial:        b.partial,
       })
     }
     return rows
+  },
+})
+
+// ─── shop settings (Khata) ──────────────────────────────────────────────────
+
+/**
+ * A user's shop settings, same shape as `settings.get` for that user
+ * (defaults when they have no row). Null for malformed / other-table /
+ * deleted ids.
+ */
+export const getUserSettings = adminQuery({
+  args: { userId: v.string() },
+  returns: v.union(shopSettingsValue, v.null()),
+  handler: async (ctx, args) => {
+    const id = ctx.db.normalizeId('users', args.userId)
+    if (id === null) return null
+    const user = await ctx.db.get('users', id)
+    if (!user) return null
+    return getShopSettings(ctx, id)
+  },
+})
+
+/**
+ * Change a user's shop settings for them (omitted fields keep their value),
+ * through the same writer as `settings.update`. Recognition changes apply to
+ * that user's NEW khata entries only. Unknown id → NOT_FOUND.
+ */
+export const setUserSettings = adminMutation({
+  args: {
+    userId:             v.string(),
+    khataEnabled:       v.optional(v.boolean()),
+    advanceRecognition: v.optional(recognitionValidator),
+    udhaarRecognition:  v.optional(recognitionValidator),
+  },
+  returns: shopSettingsValue,
+  handler: async (ctx, { userId, ...patch }) => {
+    const id = ctx.db.normalizeId('users', userId)
+    const user = id === null ? null : await ctx.db.get('users', id)
+    if (!user) throw notFoundError('User not found')
+    return upsertShopSettings(ctx, user._id, patch)
   },
 })

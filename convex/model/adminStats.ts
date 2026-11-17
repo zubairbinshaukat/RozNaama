@@ -18,6 +18,7 @@ import {
   safeDayKey,
   totalsGate,
 } from './totals'
+import { getShopSettingsRow } from './settings'
 
 /** Calendar day `n` days after `dayKey` (negative = before); zone-independent. */
 export function addDaysToKey(dayKey: string, n: number): string {
@@ -262,4 +263,9 @@ export async function latestRecord(
 export function matchesSearch(user: Pick<Doc<'users'>, 'name' | 'email'>, needle: string): boolean {
   if (needle.length === 0) return true
   return user.name.toLowerCase().includes(needle) || user.email.toLowerCase().includes(needle)
+}
+
+/** Whether the user turned Advance & Udhaar on (one indexed read; false without a row). */
+export async function khataEnabledFor(ctx: QueryCtx, userId: Id<'users'>): Promise<boolean> {
+  return (await getShopSettingsRow(ctx, userId))?.khataEnabled === true
 }

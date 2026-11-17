@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useAuth } from '@clerk/clerk-react'
-import { useQuery } from 'convex/react'
+import { useMutation, useQuery } from 'convex/react'
 import { usePaginatedQuery } from 'convex-helpers/react'
 import type { FunctionReturnType } from 'convex/server'
 import { api } from '../../convex/_generated/api'
@@ -9,6 +9,7 @@ import { readWatchlist, writeWatchlist } from '@/lib/admin'
 
 export type AdminUserRow = FunctionReturnType<typeof api.admin.listUsers>['page'][number]
 export type WatchSummary = FunctionReturnType<typeof api.admin.watchSummaries>[number]
+export type AdminShopSettings = NonNullable<FunctionReturnType<typeof api.admin.getUserSettings>>
 export type ServerUserSort = 'newest' | 'oldest' | 'name'
 
 /** Users per overview page (server max 40). */
@@ -116,4 +117,13 @@ export function useWatchSummaries(ids: readonly string[]): WatchSummary[] | unde
   )
   const rows = useQuery(api.admin.watchSummaries, args)
   return key ? rows : []
+}
+/** A user's shop settings (Khata); undefined while loading, null when the user is gone. */
+export function useAdminUserSettings(userId: string): AdminShopSettings | null | undefined {
+  return useQuery(api.admin.getUserSettings, { userId })
+}
+
+/** Change a user's shop settings for them (admin.setUserSettings; online only). */
+export function useSetAdminUserSettings() {
+  return useMutation(api.admin.setUserSettings)
 }

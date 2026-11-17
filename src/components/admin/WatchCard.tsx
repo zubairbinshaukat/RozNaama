@@ -4,6 +4,7 @@ import Amount from '@/components/shared/Amount'
 import type { WatchSummary } from '@/hooks/useAdmin'
 import { initialsOf, lastActiveLabel, recordWhenLabel } from '@/lib/admin'
 import { cn } from '@/lib/utils'
+import KhataChip from './KhataChip'
 
 type Period = { sales: number; expenses: number }
 
@@ -65,7 +66,7 @@ export default function WatchCard({ row, onAccess }: { row: WatchSummary; onAcce
             {initialsOf(row.name)}
           </span>
           <span className="flex-1 min-w-0">
-            <span className="block text-base font-semibold text-foreground truncate">{row.name}</span>
+            <span className="flex items-center gap-2 min-w-0"><span className="text-base font-semibold text-foreground truncate">{row.name}</span>{row.khataEnabled && <KhataChip />}</span>
             <span className="block text-[13px] text-muted-foreground truncate">{row.email}</span>
           </span>
           <ChevronRight size={16} className="text-muted-foreground shrink-0" aria-hidden />

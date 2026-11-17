@@ -8,6 +8,7 @@ import { USERS_PAGE, useAdminUsers, type AdminUserRow } from '@/hooks/useAdmin'
 import { USER_SORTS, initialsOf, lastActiveLabel, sortLoadedUsers, type UserSortId } from '@/lib/admin'
 import { chip, chipActive, chipIdle, inputBase } from '@/lib/ui'
 import { cn } from '@/lib/utils'
+import KhataChip from './KhataChip'
 
 /** Wait this long after the last keystroke before searching on the server. */
 export const SEARCH_DEBOUNCE_MS = 300
@@ -24,7 +25,7 @@ function UserRow({ user }: { user: AdminUserRow }) {
           {initialsOf(user.name)}
         </span>
         <span className="flex-1 min-w-0">
-          <span className="block text-base font-semibold text-foreground truncate">{user.name}</span>
+          <span className="flex items-center gap-2 min-w-0"><span className="text-base font-semibold text-foreground truncate">{user.name}</span>{user.khataEnabled && <KhataChip />}</span>
           <span className="block text-[13px] text-muted-foreground truncate">{user.email}</span>
           <span className={cn('block text-[13px] font-medium', last === 'Today' ? 'text-positive' : 'text-muted-foreground')}>
             Last active: {last}

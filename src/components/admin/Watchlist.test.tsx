@@ -12,6 +12,7 @@ type Summary = {
   latest: { kind: 'sale' | 'expense'; label: string; amount: number; at: number } | null
   today: { sales: number; expenses: number }; week: { sales: number; expenses: number }; month: { sales: number; expenses: number }
   partial: boolean
+  khataEnabled?: boolean
 }
 const summary = (id: string, name: string, extra: Partial<Summary> = {}): Summary => ({
   userId: id, name, email: `${name.toLowerCase()}@example.com`, lastActivityAt: at(14, 14),
@@ -52,7 +53,7 @@ beforeEach(() => {
   vi.useFakeTimers({ toFake: ['Date', 'setTimeout', 'clearTimeout'] })
   vi.setSystemTime(NOW)
   server.summaries = new Map([
-    ['u1', summary('u1', 'Ali Khan')],
+    ['u1', summary('u1', 'Ali Khan', { khataEnabled: true })],
     ['u2', summary('u2', 'Sana', {
       latest: { kind: 'expense', label: 'Rent', amount: 5000, at: at(9) },
       today: { sales: 0, expenses: 0 }, lastActivityAt: null,
@@ -116,6 +117,8 @@ describe('Watchlist', () => {
     expect(card.textContent).toContain('AK')
     expect(card.textContent).toContain('Sugar 1kg · PKR 160 · 2:14 PM today')
     expect(card.textContent).toContain('Last active: Today')
+    expect(card.textContent).toContain('Udhaar on')
+    expect(screen.queryByText('Udhaar on', { selector: 'article[aria-label="Sana"] *' })).toBeNull()
     expect(card.textContent).toContain('TodayPKR 1,200Net 1,000')
     expect(card.textContent).toContain('This monthPKR 20,000Net 18,500')
     expect(within(card).getByRole('link').getAttribute('href')).toBe('/admin/users/u1')

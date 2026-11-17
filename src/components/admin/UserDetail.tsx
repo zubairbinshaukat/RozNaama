@@ -18,6 +18,7 @@ import { btnOutline, btnPrimary } from '@/lib/ui'
 import { cn } from '@/lib/utils'
 import { useCardPrefs } from './cardPrefs'
 import { useImpersonate } from './useImpersonate'
+import ShopSettingsCard from './ShopSettingsCard'
 
 // Same chunks the normal dashboard uses (shared, not duplicated).
 const WeeklyChart  = lazy(() => import('@/components/dashboard/WeeklyChart'))
@@ -110,6 +111,10 @@ function Detail({ user }: { user: AdminUserRow }) {
           )}
         </section>
       )}
+
+      <QueryErrorBoundary fallbackMessage="Couldn't load shop settings" resetKeys={[user._id]}>
+        <ShopSettingsCard userId={user._id} name={user.name} />
+      </QueryErrorBoundary>
 
       <SegmentedTabs active={view} onChange={setView} showOnPhones />
 

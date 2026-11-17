@@ -31,7 +31,11 @@ vi.mock('convex-helpers/react', () => ({
     return { results: [], status: 'LoadingFirstPage', loadMore: vi.fn(), isLoading: true }
   },
 }))
-vi.mock('@/hooks/useAdmin', () => ({ useAdminUser: () => USER }))
+vi.mock('@/hooks/useAdmin', () => ({
+  useAdminUser: () => USER,
+  useAdminUserSettings: () => undefined,
+  useSetAdminUserSettings: () => vi.fn(),
+}))
 vi.mock('@/components/shared/Toast', () => ({ useToast: () => ({ showToast }) }))
 vi.mock('@/context/ViewAsContext', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/context/ViewAsContext')>()

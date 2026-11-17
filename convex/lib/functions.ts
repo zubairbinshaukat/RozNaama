@@ -8,6 +8,8 @@
  *                   FORBIDDEN if the email row belongs to another Clerk account).
  * - adminQuery:     throws FORBIDDEN unless the caller's JWT carries Clerk role
  *                   "Admin" (model/users isAdminFromIdentity).
+ * - adminMutation:  same admin check for writes (no ctx.user: the target user
+ *                   comes from the args and is checked by the function).
  * All of them throw UNAUTHORIZED when signed out and expose ctx.identity.
  */
 import { v } from 'convex/values'
@@ -40,6 +42,15 @@ export const authedMutation = customMutation(mutation, {
 })
 
 export const adminQuery = customQuery(query, {
+  args: {},
+  input: async (ctx) => {
+    const identity = await requireIdentity(ctx)
+    if (!isAdminFromIdentity(identity)) throw forbiddenError()
+    return { ctx: { identity }, args: {} }
+  },
+})
+
+export const adminMutation = customMutation(mutation, {
   args: {},
   input: async (ctx) => {
     const identity = await requireIdentity(ctx)

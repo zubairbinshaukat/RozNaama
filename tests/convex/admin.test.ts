@@ -436,3 +436,61 @@ describe('admin.watchSummaries', () => {
     expect(row).toMatchObject({ partial: true, today: { sales: 250, expenses: 0 } })
   })
 })
+describe('admin shop settings', () => {
+  const DEFAULTS = { khataEnabled: false, advanceRecognition: 'delivery', udhaarRecognition: 'delivery', updatedAt: 0 }
+
+  it('non-admins are FORBIDDEN (query and mutation); signed out UNAUTHORIZED', async () => {
+    const { t, a } = await seed()
+    for (const who of [IDENTITIES.A, IDENTITIES.NOT_ADMIN_ROLE]) {
+      expect(await errorData(signIn(t, who).query(api.admin.getUserSettings, { userId: a })))
+        .toEqual({ code: 'FORBIDDEN', message: 'Forbidden' })
+      expect(await errorData(signIn(t, who).mutation(api.admin.setUserSettings, { userId: a, khataEnabled: true })))
+        .toEqual({ code: 'FORBIDDEN', message: 'Forbidden' })
+    }
+    expect(await errorData(t.mutation(api.admin.setUserSettings, { userId: a, khataEnabled: true })))
+      .toEqual({ code: 'UNAUTHORIZED', message: 'Unauthorized' })
+    expect(await signIn(t, IDENTITIES.A).query(api.settings.get, {})).toEqual(DEFAULTS)
+  })
+
+  it('admin sets a user’s settings: their own settings.get returns them, others unaffected', async () => {
+    const { t, a, b } = await seed()
+    const admin = signIn(t, IDENTITIES.ADMIN)
+    expect(await admin.query(api.admin.getUserSettings, { userId: a })).toEqual(DEFAULTS)
+
+    const saved = await admin.mutation(api.admin.setUserSettings, { userId: a, khataEnabled: true, udhaarRecognition: 'cash' })
+    expect(saved).toMatchObject({ khataEnabled: true, advanceRecognition: 'delivery', udhaarRecognition: 'cash' })
+    expect(saved.updatedAt).toBeGreaterThanOrEqual(Date.parse(NOW))
+    expect(await signIn(t, IDENTITIES.A).query(api.settings.get, {})).toEqual(saved)
+    expect(await admin.query(api.admin.getUserSettings, { userId: a })).toEqual(saved)
+
+    // Omitted fields keep their value.
+    const next = await admin.mutation(api.admin.setUserSettings, { userId: a, advanceRecognition: 'cash' })
+    expect(next).toMatchObject({ khataEnabled: true, advanceRecognition: 'cash', udhaarRecognition: 'cash' })
+
+    expect(await signIn(t, IDENTITIES.B).query(api.settings.get, {})).toEqual(DEFAULTS)
+    expect(await admin.query(api.admin.getUserSettings, { userId: b })).toEqual(DEFAULTS)
+    expect(await t.run((ctx) => ctx.db.query('shopSettings').collect())).toHaveLength(1)
+
+    // Shows up on the list and watch rows.
+    const list = await admin.query(api.admin.listUsers, { ...LIST_ARGS, sort: 'name' })
+    expect(list.page.map((r) => r.khataEnabled)).toEqual([true, false, false, false])
+    const watch = await admin.query(api.admin.watchSummaries, { userIds: [a, b], timeZone: KHI })
+    expect(watch.map((r) => r.khataEnabled)).toEqual([true, false])
+  })
+
+  it('unknown ids: query null, mutation NOT_FOUND; recognition values are validated', async () => {
+    const { t, a, b } = await seed()
+    const admin = signIn(t, IDENTITIES.ADMIN)
+    await t.run((ctx) => ctx.db.delete('users', b))
+    const categoryId = await t.run((ctx) => ctx.db.insert('categories', { userId: a, name: 'F', color: '#6366F1', createdAt: 0 }))
+    for (const bad of ['nope', categoryId, b]) {
+      expect(await admin.query(api.admin.getUserSettings, { userId: bad })).toBeNull()
+      expect(await errorData(admin.mutation(api.admin.setUserSettings, { userId: bad, khataEnabled: true })))
+        .toEqual({ code: 'NOT_FOUND', message: 'User not found' })
+    }
+    await expect(admin.mutation(api.admin.setUserSettings, {
+      userId: a, advanceRecognition: 'later' as unknown as 'cash',
+    })).rejects.toThrow(/Validator|advanceRecognition/)
+    expect(await t.run((ctx) => ctx.db.query('shopSettings').collect())).toHaveLength(0)
+  })
+})
