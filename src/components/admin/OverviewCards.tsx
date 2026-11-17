@@ -13,27 +13,33 @@ interface Tile {
   note: ReactNode
 }
 
+/**
+ * Tiles grow to fill each row: 2 per row on phones, up to 4 per row from `sm`.
+ * Fewer visible tiles get wider; a lone tile on the last row stretches across.
+ * Tiles in a row share the same height (flex stretch).
+ */
+const TILE_SIZE = 'grow min-w-0 basis-[calc(50%-0.25rem)] sm:basis-[calc(25%-0.375rem)]'
+
 function TileCard({ tile }: { tile: Tile }) {
   return (
-    <div className="snap-start shrink-0 w-38 sm:w-auto rounded-2xl border border-border/70 bg-card px-3 py-2.5 flex flex-col gap-1 min-w-0">
-      <div className="flex items-center gap-1.5 text-muted-foreground min-w-0">
-        <span className="text-primary shrink-0" aria-hidden>{tile.icon}</span>
-        <span className="text-[12px] font-semibold leading-tight truncate">{tile.label}</span>
+    <div className="w-full min-w-0 rounded-2xl border border-border/70 bg-card px-3.5 py-3 flex flex-col gap-1.5">
+      <div className="flex items-start gap-1.5 text-muted-foreground">
+        <span className="text-primary shrink-0 mt-px" aria-hidden>{tile.icon}</span>
+        <span className="text-[12px] font-semibold leading-tight">{tile.label}</span>
       </div>
-      <p className="text-lg font-bold text-foreground tracking-tight leading-tight wrap-break-word tabular">{tile.value}</p>
-      <p className="text-[11px] text-muted-foreground leading-snug truncate">{tile.note}</p>
+      <p className="text-xl font-bold text-foreground tracking-tight leading-tight wrap-break-word tabular">{tile.value}</p>
+      <p className="mt-auto text-[11px] text-muted-foreground leading-snug">{tile.note}</p>
     </div>
   )
 }
 
-/** Mobile: one swipeable row. Wider screens: a grid that wraps. */
-const STRIP = 'flex gap-2 overflow-x-auto snap-x -mx-4 px-4 pb-1 sm:mx-0 sm:px-0 sm:grid sm:grid-cols-4 lg:grid-cols-7 sm:overflow-visible'
+const STRIP = 'flex flex-wrap gap-2'
 
 function OverviewSkeleton() {
   return (
     <div className={STRIP} aria-hidden data-testid="overview-skeleton">
       {Array.from({ length: 4 }).map((_, i) => (
-        <div key={i} className="shrink-0 w-38 sm:w-auto rounded-2xl border border-border/70 bg-card px-3 py-2.5 flex flex-col gap-2">
+        <div key={i} className={`${TILE_SIZE} rounded-2xl border border-border/70 bg-card px-3.5 py-3 flex flex-col gap-2`}>
           <div className="skeleton h-3 w-20 rounded-full" />
           <div className="skeleton h-5 w-16 rounded-lg" />
           <div className="skeleton h-2.5 w-24 rounded-full" />
@@ -76,7 +82,7 @@ export default function OverviewCards() {
         <p className="text-[15px] text-muted-foreground px-1">All overview cards are hidden. Use Customize to show them.</p>
       ) : (
         <div className={STRIP} role="list" aria-label="Platform overview">
-          {visible.map((t) => <div key={t.id} role="listitem" className="contents"><TileCard tile={t} /></div>)}
+          {visible.map((t) => <div key={t.id} role="listitem" className={`${TILE_SIZE} flex`}><TileCard tile={t} /></div>)}
         </div>
       )}
       {counting && (
