@@ -11,18 +11,10 @@ import { useKhataTotals, useUpdateShopSettings } from '@/hooks/useKhata'
 import { useCanEditOnline } from '@/hooks/useCanEditOnline'
 import { getErrorMessage } from '@/lib/errors'
 import type { Recognition } from '@/lib/khata'
+import { ADVANCE_CHOICES, KHATA_SETTINGS_COPY as T, UDHAAR_CHOICES, type RecognitionChoice } from '@/lib/khataSettingsCopy'
 import { cn } from '@/lib/utils'
 
 type Change = { khataEnabled?: boolean; advanceRecognition?: Recognition; udhaarRecognition?: Recognition }
-
-const ADVANCE_OPTIONS: { value: Recognition; title: string; example: string }[] = [
-  { value: 'delivery', title: 'On handover day (recommended)', example: '5,000 advance + 6,000 later → 11,000 on handover day' },
-  { value: 'cash', title: 'When cash comes', example: '5,000 today, 6,000 on handover day' },
-]
-const UDHAAR_OPTIONS: { value: Recognition; title: string; example: string }[] = [
-  { value: 'delivery', title: 'Full sale on sale day (recommended)', example: '6,000 sale, 3,000 paid → 6,000 today, Baqi 3,000' },
-  { value: 'cash', title: 'Only cash received', example: '3,000 today, 3,000 when paid' },
-]
 
 /** Account → Settings: the Advance & Udhaar switch and how it counts in sales. Online only; read-only in view-as. */
 export default function SettingsSheet({ onClose }: { onClose: () => void }) {
@@ -45,7 +37,7 @@ export default function SettingsSheet({ onClose }: { onClose: () => void }) {
       await update(change)
       showToast(success, 'success')
     } catch (e) {
-      showToast(getErrorMessage(e, 'Could not save settings. Try again.'), 'error')
+      showToast(getErrorMessage(e, T.saveFailed), 'error')
     } finally {
       setSaving(false)
       setConfirmOff(false)
@@ -55,9 +47,9 @@ export default function SettingsSheet({ onClose }: { onClose: () => void }) {
   const openCount = (totals?.dueCount ?? 0) + (totals?.heldCount ?? 0)
   const toggle = () => {
     if (disabled) return
-    if (!khataOn) { void save({ khataEnabled: true }, 'Advance & Udhaar is on'); return }
+    if (!khataOn) { void save({ khataEnabled: true }, T.turnedOn); return }
     if (openCount > 0) { setConfirmOff(true); return }
-    void save({ khataEnabled: false }, 'Advance & Udhaar is off')
+    void save({ khataEnabled: false }, T.turnedOff)
   }
 
   return (
@@ -77,8 +69,8 @@ export default function SettingsSheet({ onClose }: { onClose: () => void }) {
               <BookOpen size={18} />
             </span>
             <span className="flex-1 min-w-0">
-              <label htmlFor={switchId} className="block text-base font-bold text-foreground">Advance &amp; Udhaar</label>
-              <span className="block text-[13px] text-muted-foreground leading-snug">Track money customers owe you and advances you hold.</span>
+              <label htmlFor={switchId} className="block text-base font-bold text-foreground">{T.featureName}</label>
+              <span className="block text-[13px] text-muted-foreground leading-snug">{T.description}</span>
             </span>
             <button
               id={switchId}
@@ -101,34 +93,34 @@ export default function SettingsSheet({ onClose }: { onClose: () => void }) {
           {khataOn && (
             <>
               <ChoiceGroup
-                title="Advance counts in sales"
-                options={ADVANCE_OPTIONS}
+                title={T.advanceLabel}
+                options={ADVANCE_CHOICES}
                 value={settings.advanceRecognition}
                 disabled={disabled}
-                onChange={(v) => void save({ advanceRecognition: v }, 'Saved')}
+                onChange={(v) => void save({ advanceRecognition: v }, T.saved)}
               />
               <ChoiceGroup
-                title="Udhaar counts in sales"
-                options={UDHAAR_OPTIONS}
+                title={T.udhaarLabel}
+                options={UDHAAR_CHOICES}
                 value={settings.udhaarRecognition}
                 disabled={disabled}
-                onChange={(v) => void save({ udhaarRecognition: v }, 'Saved')}
+                onChange={(v) => void save({ udhaarRecognition: v }, T.saved)}
               />
             </>
           )}
         </SheetBody>
         <SheetFooter>
-          <p className="text-[13px] text-muted-foreground text-center">Changes apply to new entries only.</p>
+          <p className="text-[13px] text-muted-foreground text-center">{T.footer}</p>
         </SheetFooter>
       </Sheet>
 
       {confirmOff && (
         <ConfirmModal
-          title="Turn off Advance & Udhaar?"
-          message={`You have ${openCount} open (Baqi ${formatMoney(totals?.dueTotal ?? 0)}). They will be hidden, not deleted. Turn on again to see them.`}
-          confirmLabel="Turn off"
+          title={T.confirmOffTitle}
+          message={T.confirmOffBody(openCount, formatMoney(totals?.dueTotal ?? 0))}
+          confirmLabel={T.confirmOffAction}
           loading={saving}
-          onConfirm={() => void save({ khataEnabled: false }, 'Advance & Udhaar is off')}
+          onConfirm={() => void save({ khataEnabled: false }, T.turnedOff)}
           onClose={() => setConfirmOff(false)}
         />
       )}
@@ -138,7 +130,7 @@ export default function SettingsSheet({ onClose }: { onClose: () => void }) {
 
 function ChoiceGroup({ title, options, value, disabled, onChange }: {
   title: string
-  options: { value: Recognition; title: string; example: string }[]
+  options: readonly RecognitionChoice[]
   value: Recognition
   disabled: boolean
   onChange: (v: Recognition) => void
@@ -170,7 +162,10 @@ function ChoiceGroup({ title, options, value, disabled, onChange }: {
                 {checked && <Check size={12} strokeWidth={3} />}
               </span>
               <span className="min-w-0">
-                <span className="block text-[15px] font-semibold text-foreground">{o.title}</span>
+                <span className="block text-[15px] font-semibold text-foreground">
+                  {o.title}
+                  {o.recommended && <span className="ml-1.5 text-[11px] font-semibold text-primary">{T.recommendedTag}</span>}
+                </span>
                 <span className="block text-[13px] text-muted-foreground leading-snug">{o.example}</span>
               </span>
             </button>

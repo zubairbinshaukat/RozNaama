@@ -402,18 +402,18 @@ describe('Settings sheet', () => {
   it('off: switch only; turning on saves at once', async () => {
     m.updateSettings.mockResolvedValue(DEFAULT_SHOP_SETTINGS)
     wrap(<SettingsSheet onClose={vi.fn()} />, OFF)
-    expect(screen.getByText('Track money customers owe you and advances you hold.')).toBeTruthy()
+    expect(screen.getByText('Customers ka udhaar aur advance ka hisaab rakhein.')).toBeTruthy()
     expect(screen.queryByRole('radiogroup')).toBeNull()
     fireEvent.click(screen.getByRole('switch', { name: /Advance & Udhaar/ }))
     await waitFor(() => expect(m.updateSettings).toHaveBeenCalledWith({ khataEnabled: true }))
-    expect(screen.getByText('Changes apply to new entries only.')).toBeTruthy()
+    expect(screen.getByText('Tabdeeli sirf nayi entries par lagu hogi.')).toBeTruthy()
   })
 
   it('on: two choice groups; switching a mode saves it', async () => {
     m.updateSettings.mockResolvedValue(DEFAULT_SHOP_SETTINGS)
     wrap(<SettingsSheet onClose={vi.fn()} />)
     expect(screen.getAllByRole('radiogroup')).toHaveLength(2)
-    fireEvent.click(screen.getByRole('radio', { name: /When cash comes/ }))
+    fireEvent.click(screen.getByRole('radio', { name: /Jab paise milein/ }))
     await waitFor(() => expect(m.updateSettings).toHaveBeenCalledWith({ advanceRecognition: 'cash' }))
   })
 
@@ -422,10 +422,10 @@ describe('Settings sheet', () => {
     m.totals = { dueTotal: 3000, dueCount: 2, heldTotal: 5000, heldCount: 1 }
     wrap(<SettingsSheet onClose={vi.fn()} />)
     fireEvent.click(screen.getByRole('switch', { name: /Advance & Udhaar/ }))
-    const confirm = screen.getByRole('alertdialog', { name: 'Turn off Advance & Udhaar?' })
-    expect(confirm.textContent).toContain('You have 3 open (Baqi PKR 3,000). They will be hidden, not deleted. Turn on again to see them.')
+    const confirm = screen.getByRole('alertdialog', { name: 'Advance & Udhaar band karein?' })
+    expect(confirm.textContent).toContain('Aap ke 3 khaate abhi khule hain (Baqi PKR 3,000). Ye chhup jayenge, delete nahi honge. Dobara on karne par wapas nazar aayenge.')
     expect(m.updateSettings).not.toHaveBeenCalled()
-    fireEvent.click(within(confirm).getByRole('button', { name: 'Turn off' }))
+    fireEvent.click(within(confirm).getByRole('button', { name: 'Band karein' }))
     await waitFor(() => expect(m.updateSettings).toHaveBeenCalledWith({ khataEnabled: false }))
   })
 

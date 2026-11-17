@@ -3,23 +3,13 @@ import { BookOpenText, CloudOff, Loader2 } from 'lucide-react'
 import { useToast } from '@/components/shared/Toast'
 import { useAdminUserSettings, useSetAdminUserSettings, type AdminShopSettings } from '@/hooks/useAdmin'
 import { getErrorMessage } from '@/lib/errors'
+import { ADVANCE_CHOICES, KHATA_SETTINGS_COPY as T, UDHAAR_CHOICES, type RecognitionChoice as Choice } from '@/lib/khataSettingsCopy'
 import { useBrowserOnline } from '@/lib/network'
 import { cn } from '@/lib/utils'
 
 type Recognition = AdminShopSettings['advanceRecognition']
 type Patch = Partial<Pick<AdminShopSettings, 'khataEnabled' | 'advanceRecognition' | 'udhaarRecognition'>>
 type Field = keyof Patch
-
-type Choice = { value: Recognition; title: string; example: string; recommended?: boolean }
-
-const ADVANCE_CHOICES: readonly Choice[] = [
-  { value: 'delivery', title: 'On handover day', example: 'PKR 500 advance, goods given Friday → sale on Friday', recommended: true },
-  { value: 'cash', title: 'When cash comes', example: 'PKR 500 advance today → PKR 500 sale today' },
-]
-const UDHAAR_CHOICES: readonly Choice[] = [
-  { value: 'delivery', title: 'Full sale on sale day', example: 'PKR 1,000 on udhaar today → PKR 1,000 sale today', recommended: true },
-  { value: 'cash', title: 'Only cash received', example: 'PKR 300 paid back later → PKR 300 sale that day' },
-]
 
 function ChoiceGroup({
   label,
@@ -71,7 +61,7 @@ function ChoiceGroup({
               <span className="min-w-0 flex flex-col gap-0.5">
                 <span className="text-[15px] font-semibold text-foreground leading-tight">
                   {c.title}
-                  {c.recommended && <span className="ml-1.5 text-[11px] font-semibold text-primary">Recommended</span>}
+                  {c.recommended && <span className="ml-1.5 text-[11px] font-semibold text-primary">{T.recommendedTag}</span>}
                 </span>
                 <span className="text-[12px] text-muted-foreground leading-snug">{c.example}</span>
               </span>
@@ -122,9 +112,9 @@ export default function ShopSettingsCard({ userId, name }: { userId: string; nam
     setBusy(field)
     try {
       await setSettings({ userId, ...patch })
-      showToast(`Saved for ${name}`, 'success')
+      showToast(T.savedFor(name), 'success')
     } catch (e) {
-      showToast(getErrorMessage(e, 'Could not save. Check your internet and try again.'), 'error')
+      showToast(getErrorMessage(e, T.saveFailed), 'error')
     } finally {
       setBusy(null)
     }
@@ -137,13 +127,13 @@ export default function ShopSettingsCard({ userId, name }: { userId: string; nam
       {!online && (
         <p className="flex items-start gap-2 rounded-2xl bg-muted px-3.5 py-2.5 text-sm font-medium text-muted-foreground">
           <CloudOff size={16} className="shrink-0 mt-0.5" aria-hidden />
-          Connect to the internet to change shop settings.
+          {T.offline}
         </p>
       )}
       <div className="flex items-center gap-3">
         <div className="flex-1 min-w-0">
-          <p id={switchId} className="text-[15px] font-semibold text-foreground">Advance &amp; Udhaar</p>
-          <p className="text-[13px] text-muted-foreground leading-snug">Track advance payments and credit (udhaar) per customer.</p>
+          <p id={switchId} className="text-[15px] font-semibold text-foreground">{T.featureName}</p>
+          <p className="text-[13px] text-muted-foreground leading-snug">{T.description}</p>
         </div>
         {busy === 'khataEnabled' && <Loader2 size={18} className="animate-[spin_1s_linear_infinite] text-muted-foreground shrink-0" aria-hidden />}
         <button
@@ -172,7 +162,7 @@ export default function ShopSettingsCard({ userId, name }: { userId: string; nam
       {enabled && (
         <>
           <ChoiceGroup
-            label="Advance counts in sales"
+            label={T.advanceLabel}
             choices={ADVANCE_CHOICES}
             value={settings.advanceRecognition}
             disabled={locked}
@@ -180,7 +170,7 @@ export default function ShopSettingsCard({ userId, name }: { userId: string; nam
             onChange={(v) => void save('advanceRecognition', { advanceRecognition: v })}
           />
           <ChoiceGroup
-            label="Udhaar counts in sales"
+            label={T.udhaarLabel}
             choices={UDHAAR_CHOICES}
             value={settings.udhaarRecognition}
             disabled={locked}
@@ -189,7 +179,7 @@ export default function ShopSettingsCard({ userId, name }: { userId: string; nam
           />
         </>
       )}
-      <p className="text-[12px] text-muted-foreground border-t border-border/60 pt-3">Changes apply to new entries only.</p>
+      <p className="text-[12px] text-muted-foreground border-t border-border/60 pt-3">{T.footer}</p>
     </Frame>
   )
 }

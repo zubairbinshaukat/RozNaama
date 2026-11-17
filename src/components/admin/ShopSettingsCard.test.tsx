@@ -49,25 +49,25 @@ describe('ShopSettingsCard', () => {
     renderCard()
     expect(toggle().getAttribute('aria-checked')).toBe('false')
     expect(screen.queryByRole('radiogroup')).toBeNull()
-    expect(screen.getByText('Changes apply to new entries only.')).toBeTruthy()
+    expect(screen.getByText('Tabdeeli sirf nayi entries par lagu hogi.')).toBeTruthy()
     await act(async () => { fireEvent.click(toggle()) })
     expect(setSettings).toHaveBeenCalledWith({ userId: 'u1', khataEnabled: true })
-    expect(showToast).toHaveBeenCalledWith('Saved for Ali', 'success')
+    expect(showToast).toHaveBeenCalledWith('Ali ke liye save ho gaya', 'success')
   })
 
   it('on: shows both choices with the current values; picking one saves it', async () => {
     state.settings = { ...OFF, khataEnabled: true, udhaarRecognition: 'cash' }
     renderCard()
-    const advance = screen.getByRole('radiogroup', { name: 'Advance counts in sales' })
-    const udhaar = screen.getByRole('radiogroup', { name: 'Udhaar counts in sales' })
-    expect(advance.querySelector('[aria-checked="true"]')?.textContent).toContain('On handover day')
-    expect(udhaar.querySelector('[aria-checked="true"]')?.textContent).toContain('Only cash received')
+    const advance = screen.getByRole('radiogroup', { name: 'Advance sale mein kab gina jaye?' })
+    const udhaar = screen.getByRole('radiogroup', { name: 'Udhaar sale mein kab gina jaye?' })
+    expect(advance.querySelector('[aria-checked="true"]')?.textContent).toContain('Saman dene wale din')
+    expect(udhaar.querySelector('[aria-checked="true"]')?.textContent).toContain('Sirf jo paise milein')
 
-    await act(async () => { fireEvent.click(screen.getByRole('radio', { name: /When cash comes/ })) })
+    await act(async () => { fireEvent.click(screen.getByRole('radio', { name: /Jab paise milein/ })) })
     expect(setSettings).toHaveBeenCalledWith({ userId: 'u1', advanceRecognition: 'cash' })
     // Tapping the already-selected choice does nothing.
     setSettings.mockClear()
-    fireEvent.click(screen.getByRole('radio', { name: /Only cash received/ }))
+    fireEvent.click(screen.getByRole('radio', { name: /Sirf jo paise milein/ }))
     expect(setSettings).not.toHaveBeenCalled()
   })
 
@@ -82,7 +82,7 @@ describe('ShopSettingsCard', () => {
     state.online = false
     state.settings = { ...OFF, khataEnabled: true }
     renderCard()
-    expect(screen.getByText('Connect to the internet to change shop settings.')).toBeTruthy()
+    expect(screen.getByText('Settings badalne ke liye internet on karein.')).toBeTruthy()
     expect((toggle() as HTMLButtonElement).disabled).toBe(true)
     for (const r of screen.getAllByRole('radio')) expect((r as HTMLButtonElement).disabled).toBe(true)
   })

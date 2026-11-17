@@ -8,7 +8,8 @@ import ChooseUsersSheet, { type ChosenUser } from './ChooseUsersSheet'
 import WatchCard from './WatchCard'
 import { useImpersonate } from './useImpersonate'
 
-const GRID = 'grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3'
+// At most two per row so names, latest record and the three KPI tiles have room.
+const GRID = 'grid grid-cols-1 md:grid-cols-2 gap-4'
 
 function WatchSkeleton({ count }: { count: number }) {
   return (
