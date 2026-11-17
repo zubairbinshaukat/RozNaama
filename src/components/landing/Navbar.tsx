@@ -30,7 +30,7 @@ export default function Navbar() {
       animate={{ y: 0, opacity: 1 }}
       transition={{ duration: 0.5, ease: [0.22, 1, 0.36, 1] }}
       className={cn(
-        'fixed top-0 left-0 right-0 z-50 transition-all duration-300',
+        'fixed top-0 left-0 right-0 z-50 transition-all duration-300 pt-[env(safe-area-inset-top)]',
         isScrolled
           ? 'bg-background/80 backdrop-blur-xl border-b border-border/60 shadow-[0_1px_0_0_hsl(var(--border)/0.4)]'
           : 'bg-transparent',
@@ -40,7 +40,7 @@ export default function Navbar() {
         {/* Logo */}
         <Link to="/" className="flex items-center gap-2.5 shrink-0">
           <div className="w-8 h-8 rounded-[10px] bg-gradient-brand flex items-center justify-center shadow-glow-sm">
-            <TrendingUp className="text-white" size={15} strokeWidth={2.5} />
+            <TrendingUp className="text-brand-foreground" size={15} strokeWidth={2.5} />
           </div>
           <span className="font-logo text-[1.2rem] text-foreground">RozNaama</span>
         </Link>
@@ -50,7 +50,7 @@ export default function Navbar() {
           <ThemeSwitcher />
           {isLoaded && isSignedIn ? (
             <Link to="/dashboard">
-              <Button size="sm" className="bg-gradient-brand hover:opacity-90 text-white border-0 rounded-full px-5 shadow-glow-sm">
+              <Button size="sm" className="bg-gradient-brand hover:brightness-105 text-brand-foreground border-0 rounded-full px-5 shadow-glow-sm">
                 Dashboard
               </Button>
             </Link>
@@ -63,7 +63,7 @@ export default function Navbar() {
                 </Button>
               </Link>
               <Link to="/sign-up">
-                <Button size="sm" className="bg-gradient-brand hover:opacity-90 text-white border-0 rounded-full px-5 shadow-glow-sm">
+                <Button size="sm" className="bg-gradient-brand hover:brightness-105 text-brand-foreground border-0 rounded-full px-5 shadow-glow-sm">
                   Get Started
                 </Button>
               </Link>
@@ -75,7 +75,7 @@ export default function Navbar() {
         <div className="md:hidden flex items-center gap-2">
           <ThemeSwitcher />
           <button
-            className="p-2 rounded-full text-muted-foreground hover:text-foreground hover:bg-muted/60 active:scale-95 transition-all"
+            className="w-11 h-11 flex items-center justify-center rounded-full text-muted-foreground hover:text-foreground hover:bg-muted/60 active:scale-[0.97] transition-all"
             onClick={() => setIsMobileOpen((prev) => !prev)}
             aria-label={isMobileOpen ? 'Close menu' : 'Open menu'}
             aria-expanded={isMobileOpen}
@@ -126,19 +126,19 @@ export default function Navbar() {
             <div className="max-w-[1300px] mx-auto px-4 py-4 flex flex-col gap-3">
               {isLoaded && isSignedIn ? (
                 <Link to="/dashboard" className="block" onClick={() => setIsMobileOpen(false)}>
-                  <Button size="sm" className="w-full bg-gradient-brand hover:opacity-90 text-white border-0 rounded-full">
+                  <Button size="sm" className="w-full min-h-12 text-base bg-gradient-brand hover:brightness-105 text-brand-foreground border-0 rounded-full">
                     Go to Dashboard
                   </Button>
                 </Link>
               ) : (
                 <div className="flex gap-3">
                   <Link to="/sign-in" className="flex-1" onClick={() => setIsMobileOpen(false)}>
-                    <Button variant="ghost" size="sm" className="w-full gap-1.5 rounded-full">
+                    <Button variant="ghost" size="sm" className="w-full min-h-12 text-base gap-1.5 rounded-full">
                       <LogIn size={15} /> Sign In
                     </Button>
                   </Link>
                   <Link to="/sign-up" className="flex-1" onClick={() => setIsMobileOpen(false)}>
-                    <Button size="sm" className="w-full bg-gradient-brand hover:opacity-90 text-white border-0 rounded-full">
+                    <Button size="sm" className="w-full min-h-12 text-base bg-gradient-brand hover:brightness-105 text-brand-foreground border-0 rounded-full">
                       Get Started
                     </Button>
                   </Link>

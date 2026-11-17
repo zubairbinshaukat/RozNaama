@@ -107,6 +107,38 @@ export function parseSaleDateInputClamped(isoDate: string): number {
   return clampSaleDateToTodayMs(parseDateInputToStartOfDay(isoDate))
 }
 
+/**
+ * Earliest calendar day the pickers offer. The backend rejects dates before
+ * 2000-01-01T00:00Z; local midnight of 2 Jan 2000 is after that in every zone.
+ */
+export const MIN_ENTRY_DATE_MS = new Date(2000, 0, 2).getTime()
+
+/** Local midnight `n` calendar days after (or before, if negative) `ms`. DST-safe. */
+export function addDays(ms: number, n: number): number {
+  const d = new Date(ms)
+  return startOfDay(new Date(d.getFullYear(), d.getMonth(), d.getDate() + n))
+}
+
+/** Same local calendar day? */
+export function isSameLocalDay(a: number, b: number): boolean {
+  return toLocalDateKey(a) === toLocalDateKey(b)
+}
+
+/** Long, screen-reader friendly date: "Thursday, 12 March 2026". */
+export function formatFullDate(timestamp: number): string {
+  return new Date(timestamp).toLocaleDateString('en-PK', {
+    weekday: 'long',
+    day:     'numeric',
+    month:   'long',
+    year:    'numeric',
+  })
+}
+
+/** Month heading for calendars: "March 2026". */
+export function formatMonthYear(year: number, monthIndex: number): string {
+  return new Date(year, monthIndex, 1).toLocaleDateString('en-PK', { month: 'long', year: 'numeric' })
+}
+
 /** Get start of day (midnight) in Unix ms */
 export function startOfDay(date: Date = new Date()): number {
   const d = new Date(date)

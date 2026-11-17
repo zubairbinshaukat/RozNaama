@@ -43,8 +43,8 @@ export default function ThemeSwitcher({ className }: ThemeSwitcherProps) {
         aria-label="Change theme"
         aria-expanded={open}
         className={cn(
-          'p-2 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted',
-          'active:scale-95 transition-all duration-150',
+          'w-11 h-11 flex items-center justify-center rounded-full text-muted-foreground hover:text-foreground hover:bg-muted',
+          'active:scale-[0.97] transition-all duration-150',
           open && 'bg-muted text-foreground',
         )}
       >
@@ -52,9 +52,9 @@ export default function ThemeSwitcher({ className }: ThemeSwitcherProps) {
       </button>
 
       {open && (
-        <div className="absolute right-0 top-full mt-2 w-52 bg-card border border-border rounded-xl shadow-xl z-200 overflow-hidden animate-modal-content">
+        <div className="absolute right-0 top-full mt-2 w-60 bg-popover border border-border rounded-2xl shadow-sheet z-200 overflow-hidden animate-modal-content">
           <div className="px-3 pt-3 pb-1">
-            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Theme</p>
+            <p className="text-xs font-bold text-muted-foreground uppercase tracking-wide">Theme</p>
           </div>
           <div className="px-2 pb-2 flex flex-col gap-0.5">
             {themes.map((t) => (
@@ -63,8 +63,8 @@ export default function ThemeSwitcher({ className }: ThemeSwitcherProps) {
                 type="button"
                 onClick={() => handleSelect(t)}
                 className={cn(
-                  'w-full flex items-center gap-3 px-2.5 py-2 rounded-lg text-sm transition-all duration-150',
-                  'hover:bg-muted active:scale-[0.98]',
+                  'w-full flex items-center gap-3 px-3 min-h-11 rounded-xl text-[15px] transition-all duration-150',
+                  'hover:bg-muted active:scale-[0.97]',
                   t === preference
                     ? 'bg-primary/10 text-foreground font-medium'
                     : 'text-muted-foreground',
@@ -80,15 +80,15 @@ export default function ThemeSwitcher({ className }: ThemeSwitcherProps) {
                   }}
                 />
                 <span className="flex-1 text-left">{THEME_LABELS[t]}</span>
-                {t === preference && <Check size={14} className="text-primary shrink-0" />}
+                {t === preference && <Check size={16} className="text-primary shrink-0" />}
               </button>
             ))}
             <button
               type="button"
               onClick={() => handleSelect('random')}
               className={cn(
-                'w-full flex items-center gap-3 px-2.5 py-2 rounded-lg text-sm transition-all duration-150',
-                'hover:bg-muted active:scale-[0.98]',
+                'w-full flex items-center gap-3 px-3 min-h-11 rounded-xl text-[15px] transition-all duration-150',
+                'hover:bg-muted active:scale-[0.97]',
                 preference === 'random'
                   ? 'bg-primary/10 text-foreground font-medium'
                   : 'text-muted-foreground',
@@ -101,7 +101,7 @@ export default function ThemeSwitcher({ className }: ThemeSwitcherProps) {
                 <Shuffle size={12} className="text-primary" />
               </span>
               <span className="flex-1 text-left">Random</span>
-              {preference === 'random' && <Check size={14} className="text-primary shrink-0" />}
+              {preference === 'random' && <Check size={16} className="text-primary shrink-0" />}
             </button>
           </div>
         </div>

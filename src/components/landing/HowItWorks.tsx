@@ -82,14 +82,14 @@ export default function HowItWorks() {
         >
           {isLoaded && isSignedIn ? (
             <Link to="/dashboard">
-              <Button size="lg" className="bg-gradient-brand hover:opacity-90 text-white border-0 gap-2 shadow-glow-md rounded-full px-7 active:scale-[0.97]">
+              <Button size="lg" className="bg-gradient-brand hover:brightness-105 text-brand-foreground border-0 gap-2 shadow-glow-md rounded-full px-7 min-h-12 text-base active:scale-[0.97]">
                 Go to Dashboard
                 <ArrowRight className="w-4 h-4" />
               </Button>
             </Link>
           ) : (
             <Link to="/sign-up">
-              <Button size="lg" className="bg-gradient-brand hover:opacity-90 text-white border-0 gap-2 shadow-glow-md rounded-full px-7 active:scale-[0.97]">
+              <Button size="lg" className="bg-gradient-brand hover:brightness-105 text-brand-foreground border-0 gap-2 shadow-glow-md rounded-full px-7 min-h-12 text-base active:scale-[0.97]">
                 Start Tracking Free
                 <ArrowRight className="w-4 h-4" />
               </Button>
@@ -123,7 +123,7 @@ function StepCard({ step, delay }: { step: Step; delay: number }) {
           <Icon className="w-7 h-7" style={{ color: step.color }} />
         </div>
         <span
-          className="absolute -top-2 -right-2 w-6 h-6 rounded-full text-[10px] font-bold flex items-center justify-center text-white shadow-sm bg-gradient-brand"
+          className="absolute -top-2 -right-2 w-6 h-6 rounded-full text-xs font-bold flex items-center justify-center text-brand-foreground shadow-sm bg-gradient-brand"
         >
           {step.number}
         </span>

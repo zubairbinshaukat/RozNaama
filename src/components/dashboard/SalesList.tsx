@@ -1,19 +1,35 @@
-import { useState, useMemo } from 'react'
-import { ChevronDown, ShoppingBag, Calendar, Pencil, Trash2, Eye, Receipt } from 'lucide-react'
+import { lazy, Suspense, useState, useMemo, useId } from 'react'
+import { AlertCircle, ChevronDown, ChevronRight, CloudOff, ShoppingBag, Receipt, Notebook } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { cn, formatCurrency, formatDate, formatTime, toLocalDateKey } from '@/lib/utils'
+import { cn, formatTime, toLocalDateKey } from '@/lib/utils'
+import { getErrorMessage } from '@/lib/errors'
+import { dateKeyToLocalMs } from '@/lib/dayGroups'
+import { isPendingId } from '@/lib/offline/overlay'
+import { pendingCategoryName } from '@/lib/pendingEntries'
 import { useDeleteSaleItem } from '@/hooks/useSales'
 import { useDeleteExpenseItem } from '@/hooks/useExpenses'
+import { useOutbox } from '@/hooks/useOutbox'
+import { OFFLINE_EDIT_MESSAGE, useCanEditOnline } from '@/hooks/useCanEditOnline'
+import { useLiveQueriesEnabled } from '@/hooks/offlineData'
 import { useToast } from '@/components/shared/Toast'
 import { useIsViewingOtherSafe } from '@/context/ViewAsContext'
-import EditSaleModal from '@/components/modals/EditSaleModal'
-import EditExpenseModal from '@/components/modals/EditExpenseModal'
-import SaleDetailModal from '@/components/modals/SaleDetailModal'
-import CategorySalesModal from '@/components/modals/CategorySalesModal'
+import EmptyState from '@/components/shared/EmptyState'
+import Amount from '@/components/shared/Amount'
+import SheetFallback from '@/components/shared/SheetFallback'
+import { useFormatMoney } from '@/context/amountVisibility'
 import ConfirmModal  from '@/components/modals/ConfirmModal'
-import type { SaleSession, SaleItem } from '@/hooks/useSales'
+import type { SaleItem } from '@/hooks/useSales'
 import type { ExpenseEntry } from '@/hooks/useExpenses'
 import type { Category } from '@/hooks/useCategories'
+import type { DayGroup } from '@/lib/dayGroups'
+
+// Sheets load on first tap (precached by the service worker, so they open offline too).
+const EditSaleModal      = lazy(() => import('@/components/modals/EditSaleModal'))
+const EditExpenseModal   = lazy(() => import('@/components/modals/EditExpenseModal'))
+const SaleDetailModal    = lazy(() => import('@/components/modals/SaleDetailModal'))
+const ExpenseDetailSheet = lazy(() => import('@/components/modals/ExpenseDetailSheet'))
+const CategorySalesModal = lazy(() => import('@/components/modals/CategorySalesModal'))
+const PendingEntrySheet  = lazy(() => import('@/components/modals/PendingEntrySheet'))
 
 /* ─── helpers ─── */
 
@@ -21,350 +37,149 @@ function getTodayKey(): string {
   return toLocalDateKey(Date.now())
 }
 
-function hexToRgb(hex: string): { r: number; g: number; b: number } {
+function hexToSoftBg(hex: string, alpha: number): string {
   const clean = hex.replace('#', '')
-  return {
-    r: parseInt(clean.slice(0, 2), 16),
-    g: parseInt(clean.slice(2, 4), 16),
-    b: parseInt(clean.slice(4, 6), 16),
-  }
-}
-
-function hexToSoftBg(hex: string, alpha = 0.10): string {
-  const { r, g, b } = hexToRgb(hex)
+  const r = parseInt(clean.slice(0, 2), 16)
+  const g = parseInt(clean.slice(2, 4), 16)
+  const b = parseInt(clean.slice(4, 6), 16)
   return `rgba(${r},${g},${b},${alpha})`
 }
 
-function hexToGradient(hex: string): string {
-  const { r, g, b } = hexToRgb(hex)
-  return `linear-gradient(135deg, rgba(${r},${g},${b},0.08) 0%, rgba(${r},${g},${b},0.02) 100%)`
+function plural(n: number, one: string, many: string): string {
+  // Non-breaking space: "1 expense" never splits across lines.
+  return `${n}\u00a0${n === 1 ? one : many}`
 }
 
-/* ─── types ─── */
+/* ─── calendar-style date tile ─── */
 
-type DayGroup = {
-  dateKey:     string
-  dateLabel:   string
-  salesTotalAmount:    number
-  expenseTotalAmount:  number
-  netTotalAmount:      number
-  itemCount:   number
-  items:       SaleItem[]
-  expenses:    ExpenseEntry[]
-}
-
-function buildDayGroups(sessions: SaleSession[], expenses: ExpenseEntry[]): DayGroup[] {
-  const map = new Map<string, DayGroup>()
-
-  for (const session of sessions) {
-    const key = toLocalDateKey(session.sessionDate)
-
-    if (!map.has(key)) {
-      map.set(key, {
-        dateKey:     key,
-        dateLabel:   formatDate(session.sessionDate),
-        salesTotalAmount: 0,
-        expenseTotalAmount: 0,
-        netTotalAmount: 0,
-        itemCount:   0,
-        items:       [],
-        expenses:    [],
-      })
-    }
-
-    const group = map.get(key)!
-    group.salesTotalAmount += session.totalAmount
-    group.itemCount   += session.itemCount
-    group.items.push(...session.items)
-  }
-
-  for (const expense of expenses) {
-    const key = toLocalDateKey(expense.expenseDate)
-
-    if (!map.has(key)) {
-      map.set(key, {
-        dateKey:     key,
-        dateLabel:   formatDate(expense.expenseDate),
-        salesTotalAmount: 0,
-        expenseTotalAmount: 0,
-        netTotalAmount: 0,
-        itemCount:   0,
-        items:       [],
-        expenses:    [],
-      })
-    }
-
-    const group = map.get(key)!
-    group.expenseTotalAmount += expense.amount
-    group.expenses.push(expense)
-  }
-
-  for (const group of map.values()) {
-    group.items.sort((a, b) => a.createdAt - b.createdAt)
-    group.expenses.sort((a, b) => a.createdAt - b.createdAt)
-    group.netTotalAmount = group.salesTotalAmount - group.expenseTotalAmount
-  }
-
-  return Array.from(map.values()).sort((a, b) => b.dateKey.localeCompare(a.dateKey))
-}
-
-/* ─── empty state ─── */
-
-function EmptyState() {
+function DateTile({ dateKey, isToday }: { dateKey: string; isToday: boolean }) {
+  const ms = dateKeyToLocalMs(dateKey)
+  const valid = Number.isFinite(ms)
+  const d = valid ? new Date(ms) : null
   return (
-    <motion.div
-      initial={{ opacity: 0, y: 20, scale: 0.95 }}
-      animate={{ opacity: 1, y: 0, scale: 1 }}
-      transition={{ duration: 0.5, ease: [0.23, 1, 0.32, 1] }}
-      className="flex flex-col items-center justify-center py-24 gap-5 text-center"
+    <div
+      aria-hidden
+      className={cn(
+        'w-12 h-13 rounded-2xl flex flex-col items-center justify-center shrink-0 leading-none',
+        isToday ? 'bg-gradient-brand text-brand-foreground shadow-glow-sm' : 'bg-muted text-foreground',
+      )}
     >
-      <motion.div
-        animate={{ y: [0, -6, 0] }}
-        transition={{ repeat: Infinity, duration: 3, ease: 'easeInOut' }}
-        className="w-20 h-20 rounded-3xl bg-linear-to-br from-primary/15 via-primary/5 to-transparent flex items-center justify-center backdrop-blur-sm border border-primary/10"
-      >
-        <ShoppingBag className="text-primary/40" size={32} strokeWidth={1.5} />
-      </motion.div>
-      <div className="space-y-2">
-        <p className="font-semibold text-foreground text-lg tracking-tight">No sales or expenses yet</p>
-        <p className="text-sm text-muted-foreground leading-relaxed max-w-[240px]">
-          Tap the <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-primary text-primary-foreground text-xs font-bold align-middle">+</span> button to record your first sale, or add an expense from the dashboard
-        </p>
-      </div>
-    </motion.div>
+      <span className={cn('text-[11px] font-bold uppercase tracking-wide', !isToday && 'text-muted-foreground')}>
+        {d ? d.toLocaleDateString('en-PK', { weekday: 'short' }) : ''}
+      </span>
+      <span className="text-xl font-bold tabular mt-0.5">{d ? d.getDate() : '–'}</span>
+    </div>
   )
 }
 
-/* ─── sale item card (redesigned) ─── */
+/* ─── list rows (WhatsApp-style) ─── */
 
-const cardVariants = {
-  hidden: { opacity: 0, y: 12, scale: 0.97 },
-  visible: (i: number) => ({
-    opacity: 1,
-    y: 0,
-    scale: 1,
-    transition: {
-      delay: i * 0.04,
-      duration: 0.35,
-      ease: [0.23, 1, 0.32, 1] as [number, number, number, number],
-    },
-  }),
-} satisfies import('framer-motion').Variants
+/** Sync state of a row built from this phone's outbox (null for server rows). */
+type RowSync ='waiting' | 'needsFix' | null
 
-function SaleItemCard({
+const SYNC_TEXT: Record<Exclude<RowSync, null>, string> = {
+  waiting:  'Waiting to sync',
+  needsFix: 'Needs a fix',
+}
+
+function SyncBadge({ sync }: { sync: Exclude<RowSync, null> }) {
+  return (
+    <span
+      className={cn(
+        'inline-flex items-center gap-1 shrink-0 text-[12px] font-semibold',
+        sync === 'needsFix' ? 'text-warning' : 'text-muted-foreground',
+      )}
+      data-testid="sync-badge"
+    >
+      {sync === 'needsFix' ? <AlertCircle size={14} aria-hidden /> : <CloudOff size={14} aria-hidden />}
+      {SYNC_TEXT[sync]}
+    </span>
+  )
+}
+
+function SaleRow({
   item,
-  categories,
-  index,
-  onViewDetail,
-  onCategoryOpen,
-  onEdit,
-  onDelete,
-  readOnly,
+  categoryName,
+  color,
+  sync,
+  onOpen,
 }: {
-  item:             SaleItem
-  categories:       Category[]
-  index:            number
-  onViewDetail:     (item: SaleItem) => void
-  onCategoryOpen:   (category: Category) => void
-  onEdit:           (item: SaleItem) => void
-  onDelete:         (item: SaleItem) => void
-  readOnly:         boolean
+  item: SaleItem
+  categoryName: string | undefined
+  color: string | undefined
+  sync: RowSync
+  onOpen: () => void
 }) {
-  const cat   = categories.find((c) => c._id === item.categoryId)
-  const color = cat?.color ?? '#888888'
-  const { r, g, b } = hexToRgb(color)
-
+  const money = useFormatMoney()
   return (
-    <motion.div
-      custom={index}
-      variants={cardVariants}
-      initial="hidden"
-      animate="visible"
-      layout
-      className="h-full min-h-0 group"
-    >
-      <div
-        className="relative rounded-2xl h-full flex flex-col overflow-hidden transition-all duration-300"
-        style={{
-          background: hexToGradient(color),
-          boxShadow: `
-            0 2px 4px rgba(0,0,0,0.04),
-            0 8px 16px rgba(0,0,0,0.06),
-            0 16px 40px rgba(${r},${g},${b},0.14),
-            0 0 0 1px rgba(${r},${g},${b},0.10)
-          `,
-        }}
-        // onMouseEnter={(e) => {
-        //   e.currentTarget.style.boxShadow = `
-        //     0 2px 4px rgba(0,0,0,0.04),
-        //     0 8px 16px rgba(0,0,0,0.06),
-        //     0 16px 40px rgba(${r},${g},${b},0.14),
-        //     0 0 0 1px rgba(${r},${g},${b},0.10)
-        //   `
-        // }}
-        // onMouseLeave={(e) => {
-        //   e.currentTarget.style.boxShadow = `
-        //     0 1px 2px rgba(0,0,0,0.04),
-        //     0 4px 8px rgba(0,0,0,0.04),
-        //     0 8px 24px rgba(${r},${g},${b},0.08),
-        //     0 0 0 1px rgba(${r},${g},${b},0.06)
-        //   `
-        // }}
+    <li>
+      <button
+        type="button"
+        onClick={onOpen}
+        aria-label={`${item.productName}, ${money(item.amount)}${categoryName ? `, ${categoryName}` : ''}${sync ? `, ${SYNC_TEXT[sync].toLowerCase()}` : ''}. Open details`}
+        className="w-full flex items-center gap-3 min-h-15 px-3 py-2.5 rounded-2xl text-left hover:bg-muted/60 active:scale-[0.97] transition-all duration-150"
       >
-        {/* Top accent line */}
-        <div
-          className="h-[3px] w-full shrink-0"
-          style={{
-            background: `linear-gradient(90deg, ${color}, rgba(${r},${g},${b},0.2))`,
-          }}
-        />
-
-        {/* Card body */}
-        <div className="flex flex-col flex-1 p-4 min-h-0">
-          {/* Header: category pill + amount */}
-          <div className="flex items-start justify-between gap-2 mb-3">
-            {cat ? (
-              <button
-                type="button"
-                onClick={() => onCategoryOpen(cat)}
-                className="text-[11px] font-semibold px-2.5 py-1 rounded-full max-w-[60%] truncate text-left transition-all duration-200 hover:scale-[1.03] active:scale-[0.97]"
-                style={{
-                  backgroundColor: hexToSoftBg(cat.color, 0.14),
-                  color: cat.color,
-                }}
-              >
-                {cat.name}
-              </button>
-            ) : (
-              <span className="text-[11px] font-medium px-2.5 py-1 rounded-full bg-muted/40 text-muted-foreground">
-                Uncategorized
-              </span>
-            )}
-            <div
-              className="text-base font-bold tabular-nums tracking-tight shrink-0"
-              style={{ color }}
-            >
-              {formatCurrency(item.amount)}
-            </div>
-          </div>
-
-          {/* Product name */}
-          <p className="text-[15px] truncate font-semibold text-foreground leading-snug line-clamp-2 wrap-break min-w-0 mb-1">
-            {item.productName}
-          </p>
-
-          {/* Note */}
-          {item.note && (
-            <p className="text-xs text-muted-foreground/80 truncate line-clamp-2 leading-relaxed mt-1">
-              {item.note}
-            </p>
-          )}
-
-          {/* Spacer */}
-          <div className="flex-1 min-h-3" />
-
-          {/* Action buttons row */}
-          <div className="flex items-center gap-1 pt-3 border-t border-border/40 mt-auto">
-            <button
-              type="button"
-              onClick={() => onViewDetail(item)}
-              aria-label="View sale details"
-              className={cn(
-                'flex items-center justify-center gap-1.5 py-2 rounded-xl text-xs font-medium',
-                'text-muted-foreground/70 transition-all duration-200',
-                'hover:bg-foreground/4 hover:text-foreground',
-                'active:scale-95 touch-manipulation',
-                'flex-1',
-              )}
-            >
-              <Eye size={14} strokeWidth={2} />
-              <span className="hidden sm:inline">View</span>
-            </button>
-            {!readOnly && (
-              <>
-                <button
-                  type="button"
-                  onClick={() => onEdit(item)}
-                  aria-label="Edit sale"
-                  className={cn(
-                    'flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl text-xs font-medium',
-                    'text-muted-foreground/70 transition-all duration-200',
-                    'hover:bg-foreground/4 hover:text-blue-400',
-                    'active:scale-95 touch-manipulation',
-                  )}
-                >
-                  <Pencil size={13} strokeWidth={2} />
-                  <span className="hidden sm:inline">Edit</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => onDelete(item)}
-                  aria-label="Delete sale"
-                  className={cn(
-                    'flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl text-xs font-medium',
-                    'text-muted-foreground/70 transition-all duration-200',
-                    'hover:bg-destructive/6 hover:text-destructive',
-                    'active:scale-95 touch-manipulation',
-                  )}
-                >
-                  <Trash2 size={13} strokeWidth={2} />
-                  <span className="hidden sm:inline">Delete</span>
-                </button>
-              </>
-            )}
-          </div>
-        </div>
-      </div>
-    </motion.div>
+        <span
+          className="w-10 h-10 rounded-full flex items-center justify-center shrink-0"
+          style={color ? { backgroundColor: hexToSoftBg(color, 0.16), color } : undefined}
+          aria-hidden
+        >
+          <ShoppingBag size={18} className={color ? undefined : 'text-muted-foreground'} />
+        </span>
+        <span className="flex-1 min-w-0">
+          <span className="block text-base font-semibold text-foreground truncate">{item.productName}</span>
+          <span className="flex items-center gap-1.5 min-w-0 text-[13px] text-muted-foreground">
+            {sync && <SyncBadge sync={sync} />}
+            <span className="truncate">
+              {sync ? '· ' : ''}
+              {categoryName ?? 'No category'}
+              {item.note ? ` · ${item.note}` : ''}
+            </span>
+          </span>
+        </span>
+        <Amount value={item.amount} className="text-base font-bold text-foreground shrink-0" />
+        <ChevronRight size={16} className="text-muted-foreground/60 shrink-0" aria-hidden />
+      </button>
+    </li>
   )
 }
 
-/* ─── grid layout ─── */
-
-function SaleItemsGrid({
-  items,
-  categories,
-  onViewDetail,
-  onCategoryOpen,
-  onEdit,
-  onDelete,
-  compact,
-  readOnly,
-}: {
-  items:            SaleItem[]
-  categories:       Category[]
-  onViewDetail:     (item: SaleItem) => void
-  onCategoryOpen:   (category: Category) => void
-  onEdit:           (item: SaleItem) => void
-  onDelete:         (item: SaleItem) => void
-  compact:          boolean
-  readOnly:         boolean
-}) {
-  const n = items.length
-  if (n === 0) return null
-
-  const gridClass =
-    n === 1
-      ? 'grid-cols-1 max-w-sm'
-      : compact
-        ? 'grid-cols-2 md:grid-cols-3'
-        : 'grid-cols-2 md:grid-cols-3 xl:grid-cols-4'
-
+function ExpenseRow({ expense, sync, onOpen }: { expense: ExpenseEntry; sync: RowSync; onOpen: () => void }) {
+  const title = expense.note?.trim() || 'Expense'
+  const money = useFormatMoney()
   return (
-    <div className={cn('grid gap-3', gridClass)}>
-      {items.map((item, i) => (
-        <SaleItemCard
-          key={item._id}
-          item={item}
-          index={i}
-          categories={categories}
-          onViewDetail={onViewDetail}
-          onCategoryOpen={onCategoryOpen}
-          onEdit={onEdit}
-          onDelete={onDelete}
-          readOnly={readOnly}
-        />
-      ))}
+    <li>
+      <button
+        type="button"
+        onClick={onOpen}
+        aria-label={`Expense: ${title}, ${money(expense.amount)}${sync ? `, ${SYNC_TEXT[sync].toLowerCase()}` : ''}. Open details`}
+        className="w-full flex items-center gap-3 min-h-15 px-3 py-2.5 rounded-2xl text-left hover:bg-muted/60 active:scale-[0.97] transition-all duration-150"
+      >
+        <span className="w-10 h-10 rounded-full flex items-center justify-center shrink-0 bg-negative/12 text-negative" aria-hidden>
+          <Receipt size={18} />
+        </span>
+        <span className="flex-1 min-w-0">
+          <span className="block text-base font-semibold text-foreground truncate">{title}</span>
+          <span className="flex items-center gap-1.5 text-[13px] text-muted-foreground">
+            {sync && <SyncBadge sync={sync} />}
+            <span>{sync ? '· ' : ''}{formatTime(expense.createdAt)}</span>
+          </span>
+        </span>
+        <Amount value={expense.amount} className="text-base font-bold text-negative shrink-0" />
+        <ChevronRight size={16} className="text-muted-foreground/60 shrink-0" aria-hidden />
+      </button>
+    </li>
+  )
+}
+
+function SectionLabel({ children, total, tone }: { children: string; total: number; tone: 'negative' | 'neutral' }) {
+  return (
+    <div className="flex items-center justify-between px-3 pt-2 pb-1">
+      <span className="text-[13px] font-bold uppercase tracking-wide text-muted-foreground">{children}</span>
+      <Amount
+        value={total}
+        className={cn('text-[13px] font-bold', tone === 'negative' ? 'text-negative' : 'text-foreground')}
+      />
     </div>
   )
 }
@@ -375,37 +190,63 @@ function DayCard({
   group,
   categories,
   isOpenByDefault,
-  compact,
   readOnly,
 }: {
   group:           DayGroup
   categories:      Category[]
   isOpenByDefault: boolean
-  compact:         boolean
   readOnly:        boolean
 }) {
-  const [expanded,      setExpanded]      = useState(isOpenByDefault)
-  const [editingItem,   setEditingItem]   = useState<SaleItem | null>(null)
-  const [detailItem,    setDetailItem]    = useState<SaleItem | null>(null)
-  const [categoryModal, setCategoryModal] = useState<Category | null>(null)
-  const [deletingItem,  setDeletingItem]  = useState<SaleItem | null>(null)
+  const [expanded,       setExpanded]       = useState(isOpenByDefault)
+  const [editingItem,    setEditingItem]    = useState<SaleItem | null>(null)
+  const [detailItem,     setDetailItem]     = useState<SaleItem | null>(null)
+  const [detailExpense,  setDetailExpense]  = useState<ExpenseEntry | null>(null)
+  const [categoryModal,  setCategoryModal]  = useState<Category | null>(null)
+  const [deletingItem,   setDeletingItem]   = useState<SaleItem | null>(null)
   const [editingExpense, setEditingExpense] = useState<ExpenseEntry | null>(null)
   const [deletingExpense, setDeletingExpense] = useState<ExpenseEntry | null>(null)
-  const [deleting,      setDeleting]      = useState(false)
+  const [deleting,       setDeleting]       = useState(false)
+  /** Row id of a "Waiting to sync" row whose sheet is open. */
+  const [pendingRowId,   setPendingRowId]   = useState<string | null>(null)
+  const panelId = useId()
 
+  const money = useFormatMoney()
   const deleteItem = useDeleteSaleItem()
   const deleteExpense = useDeleteExpenseItem()
   const { showToast } = useToast()
+  const { getEntry } = useOutbox()
+  const canEdit = useCanEditOnline()
+  const live = useLiveQueriesEnabled()
+
+  const categoryById = useMemo(() => new Map(categories.map((c) => [c._id as string, c])), [categories])
+
+  const syncOf = (rowId: string): RowSync => {
+    if (!isPendingId(rowId)) return null
+    return getEntry(rowId)?.status === 'needsAttention' ? 'needsFix' : 'waiting'
+  }
+
+  /** Edits and deletes need the server: offline, explain and keep the sheet open. */
+  const whenOnline = (action: () => void) => () => {
+    if (!canEdit) {
+      showToast(OFFLINE_EDIT_MESSAGE, 'error')
+      return
+    }
+    action()
+  }
 
   const handleDelete = async () => {
     if (!deletingItem) return
+    if (!canEdit) {
+      showToast(OFFLINE_EDIT_MESSAGE, 'error')
+      return
+    }
     setDeleting(true)
     try {
       await deleteItem({ saleId: deletingItem._id })
       showToast('Sale deleted', 'success')
       setDeletingItem(null)
-    } catch {
-      showToast('Could not delete sale. Try again.', 'error')
+    } catch (err) {
+      showToast(getErrorMessage(err, 'Could not delete sale. Try again.'), 'error')
     } finally {
       setDeleting(false)
     }
@@ -413,13 +254,17 @@ function DayCard({
 
   const handleDeleteExpense = async () => {
     if (!deletingExpense) return
+    if (!canEdit) {
+      showToast(OFFLINE_EDIT_MESSAGE, 'error')
+      return
+    }
     setDeleting(true)
     try {
       await deleteExpense({ expenseId: deletingExpense._id })
       showToast('Expense deleted', 'success')
       setDeletingExpense(null)
-    } catch {
-      showToast('Could not delete expense. Try again.', 'error')
+    } catch (err) {
+      showToast(getErrorMessage(err, 'Could not delete expense. Try again.'), 'error')
     } finally {
       setDeleting(false)
     }
@@ -429,187 +274,144 @@ function DayCard({
 
   return (
     <>
-      <motion.div
-        initial={{ opacity: 0, y: 8 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.3, ease: [0.23, 1, 0.32, 1] }}
+      <div
         className={cn(
-          'rounded-2xl overflow-hidden transition-all duration-300',
-          'bg-card border border-border/60',
-          expanded ? 'shadow-md' : 'shadow-sm hover:shadow-md',
+          'rounded-3xl bg-card border overflow-hidden transition-shadow duration-200',
+          isToday ? 'border-primary/30' : 'border-border/70',
+          expanded ? 'shadow-card-hover' : 'shadow-card',
         )}
       >
-        {/* Accordion header */}
         <button
+          type="button"
           onClick={() => setExpanded((p) => !p)}
-          className="w-full flex items-center gap-3.5 px-4 py-4 text-left transition-colors hover:bg-muted/20 active:bg-muted/40"
           aria-expanded={expanded}
+          aria-controls={panelId}
+          className="w-full text-left px-3.5 py-3 hover:bg-muted/30 active:bg-muted/50 transition-colors"
         >
-          <div
-            className={cn(
-              'w-11 h-11 rounded-[14px] flex items-center justify-center shrink-0 transition-colors duration-300',
-              isToday
-                ? 'bg-primary/12 text-primary'
-                : 'bg-muted/60 text-muted-foreground',
-            )}
-          >
-            <Calendar size={18} strokeWidth={1.8} />
-          </div>
-
-          <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-2">
-              <p className="text-sm font-semibold text-foreground tracking-tight">
-                {group.dateLabel}
+          <div className="flex items-center gap-3">
+            <DateTile dateKey={group.dateKey} isToday={isToday} />
+            <div className="flex-1 min-w-0">
+              <p className="text-base font-bold text-foreground tracking-tight truncate">{group.dateLabel}</p>
+              <p className="text-[13px] text-muted-foreground mt-0.5 leading-snug">
+                {group.saleCount === 0 ? 'No\u00a0sales' : plural(group.saleCount, 'sale', 'sales')}
+                {group.expenseCount > 0 && ` · ${plural(group.expenseCount, 'expense', 'expenses')}`}
               </p>
-              {isToday && (
-                <span className="text-[10px] font-semibold uppercase tracking-wider text-primary bg-primary/10 px-2 py-0.5 rounded-full">
-                  Today
-                </span>
-              )}
             </div>
-            <p className="text-xs text-muted-foreground mt-0.5">
-              {group.itemCount === 0
-                ? 'No sales'
-                : `${group.itemCount} sale${group.itemCount !== 1 ? 's' : ''}`}
-            </p>
-            <p className="text-[11px] text-muted-foreground mt-0.5">
-              {formatCurrency(group.salesTotalAmount)} - {formatCurrency(group.expenseTotalAmount)}
-            </p>
-          </div>
-
-          <div className="flex items-center gap-3 shrink-0">
-            <span
-              className={cn(
-                'text-[17px] font-bold tabular-nums tracking-tight',
-                group.netTotalAmount < 0 ? 'text-destructive' : 'text-foreground',
-              )}
-            >
-              {formatCurrency(group.netTotalAmount)}
-            </span>
-            <motion.div
-              animate={{ rotate: expanded ? 180 : 0 }}
-              transition={{ duration: 0.25, ease: 'easeInOut' }}
-            >
-              <ChevronDown size={16} className="text-muted-foreground/60" />
-            </motion.div>
+            <Amount
+              value={group.net}
+              signed
+              colored
+              className="text-lg font-bold tracking-tight shrink-0"
+            />
+            <ChevronDown
+              size={18}
+              aria-hidden
+              className={cn('text-muted-foreground/70 shrink-0 transition-transform duration-200', expanded && 'rotate-180')}
+            />
           </div>
         </button>
 
-        {/* Expandable content */}
-        <AnimatePresence>
+        <AnimatePresence initial={false}>
           {expanded && (
             <motion.div
+              id={panelId}
               initial={{ height: 0, opacity: 0 }}
               animate={{ height: 'auto', opacity: 1 }}
               exit={{ height: 0, opacity: 0 }}
-              transition={{ duration: 0.3, ease: [0.23, 1, 0.32, 1] }}
+              transition={{ duration: 0.18, ease: [0.22, 1, 0.36, 1] }}
               className="overflow-hidden"
             >
-              <div className="px-3 pb-3 pt-1 flex flex-col gap-3">
-                {group.expenses.length > 0 && (
-                  <div className="rounded-2xl border border-destructive/20 bg-destructive/5 p-3">
-                    <div className="flex items-center justify-between gap-3">
-                      <div className="flex items-center gap-2 min-w-0">
-                        <Receipt size={16} className="text-destructive" strokeWidth={1.8} />
-                        <p className="text-sm font-semibold text-foreground">Expenses</p>
-                      </div>
-                      <p className="text-sm font-bold text-destructive tabular-nums shrink-0">
-                        {formatCurrency(group.expenseTotalAmount)}
-                      </p>
-                    </div>
-                    <div className="mt-2 space-y-2">
-                      {group.expenses.map((exp) => (
-                        <div
-                          key={exp._id}
-                          className="rounded-xl bg-card/60 border border-border/50 px-3 py-2"
-                        >
-                          <div className="flex items-start justify-between gap-3">
-                            <div className="min-w-0">
-                              <p className="text-xs font-semibold text-destructive/90 truncate">
-                                {exp.note?.trim() ? exp.note : 'Expense'}
-                              </p>
-                              <p className="text-[11px] text-muted-foreground mt-0.5">
-                                {formatTime(exp.createdAt)}
-                              </p>
-                            </div>
-                            <p className="text-sm font-bold text-destructive tabular-nums shrink-0">
-                              {formatCurrency(exp.amount)}
-                            </p>
-                          </div>
-                          {!readOnly && (
-                            <div className="mt-2 pt-2 border-t border-border/50 flex items-center gap-1">
-                              <button
-                                type="button"
-                                onClick={() => setEditingExpense(exp)}
-                                aria-label="Edit expense"
-                                className={cn(
-                                  'flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl text-xs font-medium',
-                                  'text-muted-foreground/70 transition-all duration-200',
-                                  'hover:bg-foreground/4 hover:text-blue-400',
-                                  'active:scale-95 touch-manipulation',
-                                )}
-                              >
-                                <Pencil size={13} strokeWidth={2} />
-                                <span className="hidden sm:inline">Edit</span>
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => setDeletingExpense(exp)}
-                                aria-label="Delete expense"
-                                className={cn(
-                                  'flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl text-xs font-medium',
-                                  'text-muted-foreground/70 transition-all duration-200',
-                                  'hover:bg-destructive/6 hover:text-destructive',
-                                  'active:scale-95 touch-manipulation',
-                                )}
-                              >
-                                <Trash2 size={13} strokeWidth={2} />
-                                <span className="hidden sm:inline">Delete</span>
-                              </button>
-                            </div>
-                          )}
-                        </div>
-                      ))}
-                    </div>
-                  </div>
+              <div className="px-1.5 pb-2 border-t border-border/60">
+                {group.items.length > 0 && (
+                  <>
+                    <SectionLabel total={group.salesTotal} tone="neutral">Sales</SectionLabel>
+                    <ul className="flex flex-col">
+                      {group.items.map((item) => {
+                        const sync = syncOf(item._id)
+                        const cat = item.categoryId ? categoryById.get(item.categoryId) : undefined
+                        return (
+                          <SaleRow
+                            key={item._id}
+                            item={item}
+                            categoryName={sync
+                              ? pendingCategoryName(getEntry(item._id), item.categoryId, categories)
+                              : cat?.name}
+                            color={cat?.color}
+                            sync={sync}
+                            onOpen={() => (sync ? setPendingRowId(item._id) : setDetailItem(item))}
+                          />
+                        )
+                      })}
+                    </ul>
+                  </>
                 )}
-                <SaleItemsGrid
-                  items={group.items}
-                  categories={categories}
-                  onViewDetail={setDetailItem}
-                  onCategoryOpen={setCategoryModal}
-                  onEdit={setEditingItem}
-                  onDelete={setDeletingItem}
-                  compact={compact}
-                  readOnly={readOnly}
-                />
+                {group.expenses.length > 0 && (
+                  <>
+                    <SectionLabel total={group.expenseTotal} tone="negative">Expenses</SectionLabel>
+                    <ul className="flex flex-col">
+                      {group.expenses.map((exp) => {
+                        const sync = syncOf(exp._id)
+                        return (
+                          <ExpenseRow
+                            key={exp._id}
+                            expense={exp}
+                            sync={sync}
+                            onOpen={() => (sync ? setPendingRowId(exp._id) : setDetailExpense(exp))}
+                          />
+                        )
+                      })}
+                    </ul>
+                  </>
+                )}
+                {group.items.length === 0 && group.expenses.length === 0 && (
+                  <p className="px-3 py-4 text-sm text-muted-foreground">Nothing recorded on this day.</p>
+                )}
               </div>
             </motion.div>
           )}
         </AnimatePresence>
-      </motion.div>
+      </div>
 
-      {/* Modals */}
-      {detailItem && (
-        <SaleDetailModal
-          item={detailItem}
-          categories={categories}
-          onClose={() => setDetailItem(null)}
-        />
-      )}
-      {categoryModal && (
-        <CategorySalesModal category={categoryModal} onClose={() => setCategoryModal(null)} />
-      )}
-      {editingItem && (
-        <EditSaleModal item={editingItem} categories={categories} onClose={() => setEditingItem(null)} />
-      )}
-      {editingExpense && (
-        <EditExpenseModal expense={editingExpense} onClose={() => setEditingExpense(null)} />
-      )}
-      {deletingItem && (
+      {/* Sheets */}
+      <Suspense fallback={<SheetFallback />}>
+        {detailItem && (
+          <SaleDetailModal
+            item={detailItem}
+            categories={categories}
+            onClose={() => setDetailItem(null)}
+            // The category's sales list needs live data.
+            onOpenCategory={live ? (cat) => { setDetailItem(null); setCategoryModal(cat) } : undefined}
+            onEdit={readOnly ? undefined : whenOnline(() => { setEditingItem(detailItem); setDetailItem(null) })}
+            onDelete={readOnly ? undefined : whenOnline(() => { setDeletingItem(detailItem); setDetailItem(null) })}
+            editOffline={!canEdit}
+          />
+        )}
+        {detailExpense && (
+          <ExpenseDetailSheet
+            expense={detailExpense}
+            onClose={() => setDetailExpense(null)}
+            onEdit={readOnly ? undefined : whenOnline(() => { setEditingExpense(detailExpense); setDetailExpense(null) })}
+            onDelete={readOnly ? undefined : whenOnline(() => { setDeletingExpense(detailExpense); setDetailExpense(null) })}
+            editOffline={!canEdit}
+          />
+        )}
+        {pendingRowId && !readOnly && (
+          <PendingEntrySheet rowId={pendingRowId} categories={categories} onClose={() => setPendingRowId(null)} />
+        )}
+        {categoryModal && (
+          <CategorySalesModal category={categoryModal} onClose={() => setCategoryModal(null)} />
+        )}
+        {editingItem && !readOnly && (
+          <EditSaleModal item={editingItem} categories={categories} onClose={() => setEditingItem(null)} />
+        )}
+        {editingExpense && !readOnly && (
+          <EditExpenseModal expense={editingExpense} onClose={() => setEditingExpense(null)} />
+        )}
+      </Suspense>
+      {deletingItem && !readOnly && (
         <ConfirmModal
           title="Delete Sale"
-          message={`Delete "${deletingItem.productName}" (${formatCurrency(deletingItem.amount)})?`}
+          message={`Delete "${deletingItem.productName}" (${money(deletingItem.amount)})?`}
           confirmLabel="Delete"
           destructive
           loading={deleting}
@@ -617,10 +419,10 @@ function DayCard({
           onClose={() => setDeletingItem(null)}
         />
       )}
-      {deletingExpense && (
+      {deletingExpense && !readOnly && (
         <ConfirmModal
           title="Delete Expense"
-          message={`Delete "${deletingExpense.note?.trim() || 'Expense'}" (${formatCurrency(deletingExpense.amount)})?`}
+          message={`Delete "${deletingExpense.note?.trim() || 'Expense'}" (${money(deletingExpense.amount)})?`}
           confirmLabel="Delete"
           destructive
           loading={deleting}
@@ -635,29 +437,35 @@ function DayCard({
 /* ─── main list ─── */
 
 interface SalesListProps {
-  sessions:   SaleSession[]
-  expenses?:  ExpenseEntry[]
+  /** Day groups, newest first (see `toDayGroups`). Empty → empty state. */
+  days:       DayGroup[]
   categories: Category[]
-  compact?:   boolean
+  /** Open every day card (the Daily view shows one day, expanded). Default: only today. */
+  expandAll?: boolean
 }
 
-export default function SalesList({ sessions, expenses = [], categories, compact = false }: SalesListProps) {
+export default function SalesList({ days, categories, expandAll = false }: SalesListProps) {
   const readOnly = useIsViewingOtherSafe()
   const todayKey = useMemo(() => getTodayKey(), [])
 
-  if (sessions.length === 0 && expenses.length === 0) return <EmptyState />
-
-  const days = buildDayGroups(sessions, expenses)
+  if (days.length === 0) {
+    return (
+      <EmptyState
+        icon={<Notebook size={48} strokeWidth={1.5} />}
+        title="No sales or expenses yet"
+        message="Tap the + button at the bottom to record your first sale or expense."
+      />
+    )
+  }
 
   return (
-    <div className={cn('flex flex-col gap-3', !compact && 'animate-[fade-in_0.3s_ease-out]')}>
+    <div className="flex flex-col gap-3">
       {days.map((group) => (
         <DayCard
           key={group.dateKey}
           group={group}
           categories={categories}
-          isOpenByDefault={group.dateKey === todayKey}
-          compact={compact}
+          isOpenByDefault={expandAll || group.dateKey === todayKey}
           readOnly={readOnly}
         />
       ))}

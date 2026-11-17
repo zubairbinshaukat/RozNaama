@@ -5,14 +5,25 @@ import { TOAST_DURATION } from '@/lib/constants'
 
 export type ToastType = 'success' | 'error' | 'info'
 
+export type ToastAction = {
+  label:    string
+  onAction: () => void
+}
+
+export type ToastOptions = {
+  /** One inline button, e.g. "Undo". Tapping it runs the action and dismisses. */
+  action?: ToastAction
+}
+
 export type ToastItem = {
   id:      string
   type:    ToastType
   message: string
+  action?: ToastAction
 }
 
 type ToastContextValue = {
-  showToast: (message: string, type?: ToastType) => void
+  showToast: (message: string, type?: ToastType, options?: ToastOptions) => void
 }
 
 const ToastContext = createContext<ToastContextValue | null>(null)
@@ -41,32 +52,42 @@ function Toast({ item, onDismiss }: { item: ToastItem; onDismiss: (id: string) =
 
   return (
     <div
-      role="alert"
-      aria-live="polite"
+      role={variant === 'error' ? 'alert' : 'status'}
       className={cn(
-        'flex items-start gap-3 w-80 max-w-[calc(100vw-2rem)] rounded-xl px-4 py-3 shadow-xl border backdrop-blur-sm',
-        'text-sm font-medium text-card-foreground',
+        'pointer-events-auto flex items-center gap-3 w-full sm:w-96 rounded-2xl pl-3 pr-1.5 py-1.5 min-h-14',
+        'bg-popover text-popover-foreground border border-border/70 shadow-sheet',
+        'text-[15px] font-semibold',
         exiting ? 'animate-toast-out' : 'animate-toast-in',
-        variant === 'success' && 'bg-card border-primary/35',
-        variant === 'error' && 'bg-card border-destructive/40',
-        variant === 'info' && 'bg-card border-border',
       )}
     >
-      {variant === 'success' && (
-        <CheckCircle2 size={18} className="shrink-0 mt-0.5 text-primary" />
+      <span
+        className={cn(
+          'w-9 h-9 rounded-full flex items-center justify-center shrink-0',
+          variant === 'success' && 'bg-success/15 text-success',
+          variant === 'error' && 'bg-negative/15 text-negative',
+          variant === 'info' && 'bg-muted text-muted-foreground',
+        )}
+        aria-hidden
+      >
+        {variant === 'success' && <CheckCircle2 size={18} />}
+        {variant === 'error' && <AlertCircle size={18} />}
+        {variant === 'info' && <Info size={18} />}
+      </span>
+      <span className="flex-1 leading-snug py-1.5">{item.message}</span>
+      {item.action && (
+        <button
+          type="button"
+          onClick={() => { item.action?.onAction(); dismiss() }}
+          className="shrink-0 min-h-11 px-3 rounded-full text-primary font-bold hover:bg-primary/10 transition-all active:scale-[0.97]"
+        >
+          {item.action.label}
+        </button>
       )}
-      {variant === 'error' && (
-        <AlertCircle size={18} className="shrink-0 mt-0.5 text-destructive" />
-      )}
-      {variant === 'info' && (
-        <Info size={18} className="shrink-0 mt-0.5 text-muted-foreground" />
-      )}
-      <span className="flex-1 leading-snug">{item.message}</span>
       <button
         type="button"
         onClick={dismiss}
         aria-label="Dismiss notification"
-        className="shrink-0 text-muted-foreground opacity-80 hover:opacity-100 transition-opacity active:scale-95"
+        className="shrink-0 w-11 h-11 rounded-full flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-muted/70 transition-all active:scale-[0.97]"
       >
         <X size={16} />
       </button>
@@ -77,9 +98,9 @@ function Toast({ item, onDismiss }: { item: ToastItem; onDismiss: (id: string) =
 export function ToastProvider({ children }: { children: React.ReactNode }) {
   const [toasts, setToasts] = useState<ToastItem[]>([])
 
-  const showToast = useCallback((message: string, type: ToastType = 'success') => {
+  const showToast = useCallback((message: string, type: ToastType = 'success', options?: ToastOptions) => {
     const id = `${Date.now()}-${Math.random()}`
-    setToasts((prev) => [...prev, { id, type, message }])
+    setToasts((prev) => [...prev, { id, type, message, ...(options?.action ? { action: options.action } : {}) }])
   }, [])
 
   const dismiss = useCallback((id: string) => {
@@ -89,11 +110,12 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
   return (
     <ToastContext.Provider value={{ showToast }}>
       {children}
-      {/* Top-right toast portal */}
+      {/* Top-centre on phones (clear of thumbs and sheets), top-right on desktop */}
       <div
         aria-live="polite"
         aria-atomic="false"
-        className="fixed top-4 right-4 z-[9998] flex flex-col gap-2 items-end"
+        className="pointer-events-none fixed inset-x-0 top-0 z-9998 flex flex-col items-center sm:items-end gap-2 px-3 sm:px-4"
+        style={{ paddingTop: 'calc(0.75rem + env(safe-area-inset-top))' }}
       >
         {toasts.map((t) => (
           <Toast key={t.id} item={t} onDismiss={dismiss} />

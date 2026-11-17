@@ -4,11 +4,16 @@ import { BrowserRouter } from 'react-router-dom'
 import { ClerkProvider, useAuth } from '@clerk/clerk-react'
 import { ConvexProviderWithClerk } from 'convex/react-clerk'
 import { ConvexReactClient } from 'convex/react'
-import { registerSW } from 'virtual:pwa-register'
+import { setupPwaAutoUpdate } from '@/lib/pwaUpdate'
+import { CLERK_JS_VERSION } from '@/lib/startupHints'
+import { PERF_MARKS, perfMark } from '@/lib/perf'
+import { preloadSnapshot } from '@/lib/offline/snapshot'
+import { readLastUserHint } from '@/lib/userHints'
 import '@/styles/globals.css'
 import App from './App'
 
-registerSW({ onNeedRefresh() {}, onOfflineReady() {} })
+perfMark(PERF_MARKS.boot)
+setupPwaAutoUpdate()
 
 const publishableKey = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY as string | undefined
 const convexUrl      = import.meta.env.VITE_CONVEX_URL as string | undefined
@@ -27,7 +32,7 @@ if (!publishableKey || !convexUrl) {
           flexDirection: 'column',
           alignItems: 'center',
           justifyContent: 'center',
-          fontFamily: 'Inter, system-ui, sans-serif',
+          fontFamily: "'Inter Variable', Inter, system-ui, sans-serif",
           background: '#ffffff',
           color: '#111827',
           padding: '2rem',
@@ -49,17 +54,21 @@ if (!publishableKey || !convexUrl) {
     </StrictMode>,
   )
 } else {
-  const convexClient = new ConvexReactClient(convexUrl)
+  // No beforeunload prompt: WP-B's outbox (IndexedDB) owns unsynced entries, and a
+  // browser "Leave site?" dialog only confuses shopkeepers on PWA reloads / updates.
+  const convexClient = new ConvexReactClient(convexUrl, { unsavedChangesWarning: false })
 
-  root.render(
+  const render = () => root.render(
     <StrictMode>
       <ClerkProvider
         publishableKey={publishableKey}
+        // Exact version → stable URL for the index.html preload + SW cache (see startupHints.ts).
+        clerkJSVersion={CLERK_JS_VERSION}
         appearance={{
           variables: {
-            colorPrimary:   'hsl(239, 84%, 67%)',
-            borderRadius:   '0.625rem',
-            fontFamily:     'Inter, system-ui, sans-serif',
+            colorPrimary:   'hsl(243, 75%, 59%)',
+            borderRadius:   '0.875rem',
+            fontFamily:     "'Inter Variable', Inter, system-ui, sans-serif",
           },
         }}
       >
@@ -71,4 +80,13 @@ if (!publishableKey || !convexUrl) {
       </ClerkProvider>
     </StrictMode>,
   )
+
+  // Instant open: read the last user's dashboard snapshot from IndexedDB before
+  // the first render, so the dashboard can paint saved numbers instead of a
+  // spinner. Capped at 300 ms (a slow read finishes in the background and the
+  // SnapshotProvider picks it up). Convex connects meanwhile, and clerk-js is
+  // already downloading (preloaded from index.html).
+  void preloadSnapshot(readLastUserHint()?.id, 300)
+    .catch(() => null)
+    .then(render)
 }

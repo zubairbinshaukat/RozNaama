@@ -1,6 +1,8 @@
-import { useEffect } from 'react'
-import { AlertTriangle, Loader2, X } from 'lucide-react'
-import { Button } from '@/components/ui/button'
+import { useId } from 'react'
+import { AlertTriangle, Loader2 } from 'lucide-react'
+import Sheet, { SheetBody, SheetFooter, SheetHeader } from '@/components/shared/Sheet'
+import { cn } from '@/lib/utils'
+import { btnDanger, btnPrimary, btnSecondary } from '@/lib/ui'
 
 interface ConfirmModalProps {
   title:        string
@@ -21,72 +23,50 @@ export default function ConfirmModal({
   onConfirm,
   onClose,
 }: ConfirmModalProps) {
-  useEffect(() => {
-    if (loading) return
-    const handler = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
-    document.addEventListener('keydown', handler)
-    return () => document.removeEventListener('keydown', handler)
-  }, [onClose, loading])
+  const titleId = useId()
+  const messageId = useId()
 
   return (
-    <div
-      className="fixed inset-0 z-600 flex items-center justify-center p-4"
+    <Sheet
+      onClose={onClose}
+      dismissible={!loading}
+      labelledBy={titleId}
+      describedBy={messageId}
       role="alertdialog"
-      aria-modal="true"
-      aria-labelledby="confirm-title"
+      layer={600}
+      size="sm"
     >
-      <div
-        className="absolute inset-0 bg-black/60 animate-modal-backdrop"
-        onClick={() => { if (!loading) onClose() }}
-        aria-hidden
+      <SheetHeader
+        titleId={titleId}
+        title={title}
+        icon={<AlertTriangle size={18} />}
+        iconClassName={destructive ? 'bg-negative/10 text-negative' : undefined}
+        onClose={onClose}
+        closeDisabled={loading}
       />
-
-      <div className="relative w-full max-w-sm bg-card border border-border rounded-2xl shadow-2xl animate-modal-content">
-        <div className="px-5 pt-5 pb-4 flex items-start gap-3">
-          <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${destructive ? 'bg-destructive/10' : 'bg-primary/10'}`}>
-            <AlertTriangle size={18} className={destructive ? 'text-destructive' : 'text-primary'} />
-          </div>
-          <div className="flex-1 pt-0.5">
-            <h2 id="confirm-title" className="text-base font-semibold text-foreground">{title}</h2>
-            <p className="text-sm text-muted-foreground mt-1 leading-snug">{message}</p>
-          </div>
-          <button
-            onClick={onClose}
-            disabled={loading}
-            aria-label="Close"
-            className="p-1 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted disabled:opacity-40 transition-all active:scale-95"
-          >
-            <X size={16} />
-          </button>
-        </div>
-
-        <div className="flex gap-3 px-5 pb-5">
-          <Button
-            type="button"
-            variant="ghost"
-            onClick={onClose}
-            disabled={loading}
-            className="flex-1 active:scale-[0.97]"
-          >
+      <SheetBody>
+        <p id={messageId} className="text-base text-muted-foreground leading-relaxed">{message}</p>
+        {destructive && (
+          <p className="text-sm text-muted-foreground mt-2">This can&apos;t be undone.</p>
+        )}
+      </SheetBody>
+      <SheetFooter>
+        <div className="flex gap-3">
+          <button type="button" onClick={onClose} disabled={loading} className={cn(btnSecondary, 'flex-1')}>
             Cancel
-          </Button>
-          <Button
+          </button>
+          <button
             type="button"
             onClick={onConfirm}
             disabled={loading}
-            className={`flex-1 gap-2 active:scale-[0.97] text-white border-0 ${
-              destructive
-                ? 'bg-destructive hover:bg-destructive/90'
-                : 'bg-gradient-brand hover:opacity-90'
-            }`}
+            className={cn(destructive ? btnDanger : btnPrimary, 'flex-1')}
           >
             {loading
-              ? <><Loader2 size={16} className="animate-spin" /> Deleting…</>
-              : confirmLabel
-            }
-          </Button>
+              ? <><Loader2 size={18} className="animate-[spin_1s_linear_infinite]" /> Deleting…</>
+              : confirmLabel}
+          </button>
         </div>
-      </div>
-    </div>
+      </SheetFooter>
+    </Sheet>
   )
 }

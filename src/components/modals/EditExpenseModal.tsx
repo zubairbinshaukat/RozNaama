@@ -1,16 +1,24 @@
-import { useState, useEffect, useRef } from 'react'
-import { X, Check, Loader2, AlertCircle } from 'lucide-react'
-import { Button } from '@/components/ui/button'
-import { cn, formatCurrency } from '@/lib/utils'
+import { useState, useRef, useId } from 'react'
+import { Check, Loader2, AlertCircle, Pencil } from 'lucide-react'
+import { cn, formatDate } from '@/lib/utils'
+import { btnPrimary, btnSecondary, fieldError, fieldLabel, inputBase } from '@/lib/ui'
+import { checkAmount } from '@/lib/amount'
 import { useUpdateExpenseItem, type ExpenseEntry } from '@/hooks/useExpenses'
 import { useToast } from '@/components/shared/Toast'
-import { useVisualViewportBottomInset } from '@/hooks/useVisualViewportInset'
+import { NOTE_MAX } from '@/lib/constants'
+import { getErrorMessage } from '@/lib/errors'
+import Sheet, { SheetBody, SheetFooter, SheetHeader } from '@/components/shared/Sheet'
+import AmountInput from '@/components/shared/AmountInput'
+import { EXPENSE_QUICK_AMOUNTS } from '@/lib/expenseDate'
+import { OFFLINE_EDIT_MESSAGE, useCanEditOnline } from '@/hooks/useCanEditOnline'
+import OfflineEditNote from '@/components/shared/OfflineEditNote'
 
 interface EditExpenseModalProps {
   expense:  ExpenseEntry
   onClose:  () => void
 }
 
+/** Amount + note only — the backend does not support moving an expense to another day. */
 export default function EditExpenseModal({ expense, onClose }: EditExpenseModalProps) {
   const [amount, setAmount] = useState(String(expense.amount))
   const [note, setNote] = useState(expense.note ?? '')
@@ -18,25 +26,25 @@ export default function EditExpenseModal({ expense, onClose }: EditExpenseModalP
   const [error, setError] = useState<string | null>(null)
 
   const updateExpense = useUpdateExpenseItem()
+  const canEdit = useCanEditOnline()
   const { showToast } = useToast()
-  const keyboardInset = useVisualViewportBottomInset()
+  const titleId = useId()
   const amountRef = useRef<HTMLInputElement>(null)
 
-  useEffect(() => { amountRef.current?.focus() }, [])
-
-  useEffect(() => {
-    const handler = (e: KeyboardEvent) => { if (e.key === 'Escape' && !saving) onClose() }
-    document.addEventListener('keydown', handler)
-    return () => document.removeEventListener('keydown', handler)
-  }, [onClose, saving])
+  const close = () => { if (!saving) onClose() }
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     if (saving) return
+    if (!canEdit) {
+      showToast(OFFLINE_EDIT_MESSAGE, 'error')
+      return
+    }
 
-    const parsed = parseFloat(amount)
-    if (isNaN(parsed) || parsed <= 0) {
-      setError('Enter a valid expense amount greater than 0.')
+    const check = checkAmount(amount, 'expense amount')
+    if (!check.ok) {
+      setError(check.message)
+      amountRef.current?.focus()
       return
     }
 
@@ -45,97 +53,85 @@ export default function EditExpenseModal({ expense, onClose }: EditExpenseModalP
     try {
       await updateExpense({
         expenseId: expense._id,
-        amount: parsed,
+        amount: check.value,
         note: note.trim() || undefined,
       })
       showToast('Expense updated!', 'success')
       onClose()
-    } catch {
-      setError('Could not update expense. Try again.')
-      showToast('Could not update expense.', 'error')
+    } catch (e) {
+      setError(getErrorMessage(e, 'Could not update expense. Try again.'))
+      showToast(getErrorMessage(e, 'Could not update expense.'), 'error')
     } finally {
       setSaving(false)
     }
   }
 
-  const parsed = parseFloat(amount)
-
   return (
-    <div className="fixed inset-0 z-500 flex items-end sm:items-center justify-center p-4" role="dialog" aria-modal="true" aria-labelledby="edit-expense-title">
-      <div className="absolute inset-0 bg-black/50 animate-modal-backdrop" onClick={() => { if (!saving) onClose() }} aria-hidden />
-      <div className="relative w-full max-w-md max-h-[min(92dvh,calc(100vh-2rem))] flex flex-col bg-card border border-border rounded-2xl shadow-2xl animate-modal-content overflow-hidden">
-        <div className="flex items-center justify-between px-5 pt-5 pb-4 border-b border-border shrink-0">
-          <h2 id="edit-expense-title" className="text-base font-semibold text-foreground">Edit Expense</h2>
-          <button
-            onClick={() => { if (!saving) onClose() }}
-            disabled={saving}
-            aria-label="Close"
-            className="p-1.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted disabled:opacity-40 active:scale-95 transition-all"
-          >
-            <X size={18} />
-          </button>
-        </div>
+    <Sheet onClose={close} dismissible={!saving} labelledBy={titleId} initialFocusRef={amountRef}>
+      <SheetHeader
+        titleId={titleId}
+        title="Edit expense"
+        subtitle={<>Expense from <span className="font-semibold text-foreground">{formatDate(expense.expenseDate)}</span></>}
+        icon={<Pencil size={18} />}
+        iconClassName="bg-negative/10 text-negative"
+        onClose={close}
+        closeDisabled={saving}
+      />
 
-        <form onSubmit={handleSubmit} className="px-5 pt-5 flex flex-col gap-4 min-h-0 overflow-y-auto flex-1" style={{ paddingBottom: `calc(1.25rem + env(safe-area-inset-bottom) + ${keyboardInset}px)` }}>
-          {error && (
-            <p className="flex items-center gap-1.5 text-xs text-destructive font-medium" role="alert">
-              <AlertCircle size={12} /> {error}
-            </p>
-          )}
+      <form onSubmit={handleSubmit} className="flex flex-col flex-1 min-h-0" noValidate>
+        <SheetBody className="flex flex-col gap-4">
           <div className="flex flex-col gap-1.5">
-            <label htmlFor="edit-expense-amount" className="text-sm font-medium text-foreground">
-              Amount (PKR) <span aria-hidden className="text-destructive">*</span>
-            </label>
-            <input
+            <label htmlFor="edit-expense-amount" className={fieldLabel}>How much did you spend?</label>
+            <AmountInput
               id="edit-expense-amount"
-              ref={amountRef}
-              type="number"
+              inputRef={amountRef}
+              size="lg"
+              tone="negative"
               value={amount}
-              onChange={(e) => { setAmount(e.target.value); setError(null) }}
-              placeholder="0"
-              min="0"
-              step="1"
-              inputMode="numeric"
-              className={cn(
-                'w-full h-11 px-3 rounded-lg border bg-background text-foreground text-sm',
-                'placeholder:text-muted-foreground',
-                'focus:outline-none focus:ring-2 focus:ring-ring focus:border-transparent transition-shadow',
-                '[appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none',
-                error && 'border-destructive focus:ring-destructive/40',
-              )}
+              onChange={(v) => { setAmount(v); setError(null) }}
+              invalid={Boolean(error)}
+              disabled={saving}
+              aria-describedby={error ? 'edit-expense-err' : undefined}
+              quickAmounts={EXPENSE_QUICK_AMOUNTS}
             />
+            {error && (
+              <p id="edit-expense-err" className={fieldError} role="alert">
+                <AlertCircle size={16} className="shrink-0" /> {error}
+              </p>
+            )}
           </div>
 
           <div className="flex flex-col gap-1.5">
-            <label htmlFor="edit-expense-note" className="text-sm font-medium text-foreground">Note</label>
+            <label htmlFor="edit-expense-note" className={fieldLabel}>
+              What was it for? <span className="font-normal text-muted-foreground">(optional)</span>
+            </label>
             <input
               id="edit-expense-note"
               type="text"
               value={note}
               onChange={(e) => setNote(e.target.value)}
-              placeholder="Optional"
-              maxLength={100}
-              className="h-11 px-3 rounded-lg border bg-background text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:border-transparent transition-shadow"
+              placeholder="e.g. electricity, rent, stock purchase"
+              maxLength={NOTE_MAX}
+              disabled={saving}
+              className={inputBase}
             />
           </div>
+        </SheetBody>
 
-          {!isNaN(parsed) && parsed > 0 && (
-            <p className="text-xs text-muted-foreground">
-              Expense: <span className="font-semibold text-destructive">{formatCurrency(parsed)}</span>
-            </p>
-          )}
-
-          <div className="flex gap-3 pt-1">
-            <Button type="button" variant="ghost" onClick={() => { if (!saving) onClose() }} disabled={saving} className="flex-1 active:scale-[0.97]">
+        <SheetFooter>
+          {!canEdit && <OfflineEditNote className="mb-3" />}
+          <div className="flex gap-3">
+            <button type="button" onClick={close} disabled={saving} className={cn(btnSecondary, 'flex-1')}>
               Cancel
-            </Button>
-            <Button type="submit" disabled={saving} className="flex-1 bg-gradient-brand hover:opacity-90 text-white border-0 gap-2 active:scale-[0.97]">
-              {saving ? <><Loader2 size={16} className="animate-spin" /> Saving…</> : <><Check size={16} /> Save Changes</>}
-            </Button>
+            </button>
+            <button type="submit" disabled={saving || !canEdit} className={cn(btnPrimary, 'flex-2')}>
+              {saving
+                ? <><Loader2 size={18} className="animate-[spin_1s_linear_infinite]" /> Saving…</>
+                : <><Check size={18} /> Save changes</>}
+            </button>
           </div>
-        </form>
-      </div>
-    </div>
+        </SheetFooter>
+      </form>
+    </Sheet>
   )
 }
-

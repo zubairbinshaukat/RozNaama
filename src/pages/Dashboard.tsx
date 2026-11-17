@@ -1,41 +1,78 @@
-import { useState, useEffect, useRef, useCallback } from 'react'
-import { Sun, CalendarDays, CalendarRange, Calendar, TrendingUp, Download } from 'lucide-react'
-import { UserButton, useUser } from '@clerk/clerk-react'
+import { lazy, Suspense, useState, useEffect, useRef, useCallback, useMemo } from 'react'
+import { TrendingUp, Download, Eye, ArrowLeft } from 'lucide-react'
+import { useUser } from '@clerk/clerk-react'
 import { Link } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
-import { cn, getGreeting } from '@/lib/utils'
+import { getGreeting } from '@/lib/utils'
+import { VIEWS, VIEW_LABELS, VIEW_PANEL_ID, type View } from '@/lib/views'
+import {
+  CURRENT_SELECTION,
+  dayLabel,
+  monthLabel,
+  resolveSelection,
+  selectPeriod,
+  weekLabel,
+  yearLabel,
+  type PeriodSelection,
+} from '@/lib/period'
 import ThemeSwitcher   from '@/components/shared/ThemeSwitcher'
-import SummaryCards    from '@/components/dashboard/SummaryCards'
+import { AmountVisibilityProvider, AmountVisibilityToggle } from '@/components/shared/Amount'
+import PeriodSummary   from '@/components/dashboard/PeriodSummary'
 import DailyTab        from '@/components/dashboard/DailyTab'
-import WeeklyChart     from '@/components/dashboard/WeeklyChart'
-import MonthlyChart    from '@/components/dashboard/MonthlyChart'
-import YearlyChart     from '@/components/dashboard/YearlyChart'
+import DayFeedSkeleton from '@/components/dashboard/DayFeedSkeleton'
+import AccountMenu     from '@/components/dashboard/AccountMenu'
+import { SegmentedTabs, BottomNav } from '@/components/dashboard/ViewTabs'
 import FAB             from '@/components/shared/FAB'
-import AddCategoryModal      from '@/components/modals/AddCategoryModal'
-import AddSaleModal          from '@/components/modals/AddSaleModal'
-import AddExpenseModal      from '@/components/modals/AddExpenseModal'
-import ManageCategoriesModal from '@/components/modals/ManageCategoriesModal'
-import IOSInstallModal      from '@/components/modals/IOSInstallModal'
-import { useDashboardStats } from '@/hooks/useSales'
+import SheetFallback   from '@/components/shared/SheetFallback'
+import DataFreshnessChip from '@/components/shared/DataFreshnessChip'
 import { useViewAs } from '@/context/ViewAsContext'
-import AdminAccessDialog from '@/components/dashboard/AdminAccessDialog'
+import { DashboardActionsContext, type DashboardActions } from '@/context/dashboardActions'
+import { useToast } from '@/components/shared/Toast'
+import QueryErrorBoundary from '@/components/shared/QueryErrorBoundary'
 import { useHorizontalTabSwipe } from '@/hooks/useHorizontalTabSwipe'
 import { useMediaQueryMatch } from '@/hooks/useMediaQueryMatch'
+import { OFFLINE_EDIT_MESSAGE, useCanEditOnline } from '@/hooks/useCanEditOnline'
+import { readLastUserHint } from '@/lib/userHints'
 
-type Tab = 'daily' | 'weekly' | 'monthly' | 'yearly'
+// ── Code splitting ──────────────────────────────────────────────────────────
+// Recharts views and secondary sheets are separate chunks, so the first load
+// is just the Daily view. All chunks are precached by the service worker.
+const WeeklyChart  = lazy(() => import('@/components/dashboard/WeeklyChart'))
+const MonthlyChart = lazy(() => import('@/components/dashboard/MonthlyChart'))
+const YearlyChart  = lazy(() => import('@/components/dashboard/YearlyChart'))
 
-const TABS: { id: Tab; label: string; icon: React.ReactNode }[] = [
-  { id: 'daily',   label: 'Daily',   icon: <Sun          size={14} /> },
-  { id: 'weekly',  label: 'Weekly',  icon: <CalendarDays  size={14} /> },
-  { id: 'monthly', label: 'Monthly', icon: <CalendarRange size={14} /> },
-  { id: 'yearly', label: 'Yearly', icon: <Calendar size={14} /> },
-]
+const loadAddSale    = () => import('@/components/modals/AddSaleModal')
+const loadAddExpense = () => import('@/components/modals/AddExpenseModal')
+const AddSaleModal          = lazy(loadAddSale)
+const AddExpenseModal       = lazy(loadAddExpense)
+const AddCategoryModal      = lazy(() => import('@/components/modals/AddCategoryModal'))
+const ManageCategoriesModal = lazy(() => import('@/components/modals/ManageCategoriesModal'))
+const IOSInstallModal       = lazy(() => import('@/components/modals/IOSInstallModal'))
+const AdminAccessDialog     = lazy(() => import('@/components/dashboard/AdminAccessDialog'))
 
-const TAB_LABELS: Record<Tab, string> = {
-  daily: 'Daily',
-  weekly: 'Weekly',
-  monthly: 'Monthly',
-  yearly: 'Yearly',
+/** The two everyday sheets: fetch them once the dashboard is idle, so the first tap is instant. */
+function usePrefetchEntrySheets() {
+  useEffect(() => {
+    const prefetch = () => {
+      loadAddSale().catch(() => {})
+      loadAddExpense().catch(() => {})
+    }
+    if (typeof window.requestIdleCallback === 'function') {
+      const id = window.requestIdleCallback(prefetch, { timeout: 3000 })
+      return () => window.cancelIdleCallback(id)
+    }
+    const timer = window.setTimeout(prefetch, 1500)
+    return () => window.clearTimeout(timer)
+  }, [])
+}
+
+function ChartViewSkeleton() {
+  return (
+    <div className="flex flex-col gap-3 pt-1" data-testid="chart-view-skeleton">
+      <div className="skeleton h-64 rounded-3xl" aria-hidden />
+      <DayFeedSkeleton count={2} />
+    </div>
+  )
 }
 
 // ── PWA install hook ────────────────────────────────────────────────────────
@@ -48,7 +85,7 @@ type BeforeInstallPromptEvent = Event & {
 function usePWAInstall({ onIOSInstall }: { onIOSInstall: () => void }) {
   const [promptEvent, setPromptEvent] = useState<BeforeInstallPromptEvent | null>(null)
   const [isInstalled, setIsInstalled] = useState(() => {
-    if (typeof window === 'undefined') return false
+    if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return false
     const mediaQuery = window.matchMedia('(display-mode: standalone)')
     const standaloneNavigator = (window.navigator as { standalone?: boolean }).standalone === true
     return mediaQuery.matches || standaloneNavigator
@@ -59,6 +96,7 @@ function usePWAInstall({ onIOSInstall }: { onIOSInstall: () => void }) {
   })
 
   useEffect(() => {
+    if (typeof window.matchMedia !== 'function') return
     const mediaQuery = window.matchMedia('(display-mode: standalone)')
     const handler = (e: Event) => {
       e.preventDefault()
@@ -92,27 +130,79 @@ function usePWAInstall({ onIOSInstall }: { onIOSInstall: () => void }) {
   return { canInstall: !isInstalled && (isIOS || !!promptEvent), install, isIOS }
 }
 
+/** Screen-reader heading for the summary: "Weekly · Last week". */
+function periodTitle(view: View, value: number): string {
+  const name =
+    view === 'daily' ? dayLabel(value)
+    : view === 'weekly' ? weekLabel(value)
+    : view === 'monthly' ? monthLabel(value)
+    : yearLabel(value)
+  return `${VIEW_LABELS[view]} · ${name}`
+}
+
+// ── Modal error boundary (category / count queries inside modals) ──────────
+
+const MODAL_FALLBACK_CLASS =
+  'fixed z-[500] left-4 right-4 bottom-[calc(1rem+env(safe-area-inset-bottom))] sm:left-1/2 sm:right-auto sm:w-full sm:max-w-md sm:-translate-x-1/2 shadow-lg'
+
+/**
+ * Keeps a modal's failing query (e.g. FORBIDDEN / USER_NOT_FOUND during
+ * view-as, or a server error) from white-screening the dashboard: view-as
+ * invalidation drops back to own data, anything else shows the fallback card
+ * with Retry / Close.
+ */
+function ModalQueryBoundary({ children, onClose }: { children: React.ReactNode; onClose: () => void }) {
+  const { isViewingOther, viewAsUserId, handleViewAsInvalid } = useViewAs()
+  return (
+    <QueryErrorBoundary
+      isViewingOther={isViewingOther}
+      onViewAsInvalid={handleViewAsInvalid}
+      resetKeys={[viewAsUserId]}
+      onDismiss={onClose}
+      className={MODAL_FALLBACK_CLASS}
+    >
+      {children}
+    </QueryErrorBoundary>
+  )
+}
+
 // ── Dashboard ────────────────────────────────────────────────────────────────
 
 export default function Dashboard() {
-  const [activeTab,              setActiveTab]              = useState<Tab>('daily')
+  const [activeTab,              setActiveTab]              = useState<View>('daily')
   const [showCategoryModal,      setShowCategoryModal]      = useState(false)
   const [showSaleModal,          setShowSaleModal]          = useState(false)
   const [showExpenseModal,      setShowExpenseModal]      = useState(false)
   const [showManageCategoriesModal, setShowManageCategoriesModal] = useState(false)
   const [showIOSInstallModal,   setShowIOSInstallModal]   = useState(false)
+  /** Selected day / week / month / year per view: kept while switching tabs, reset on reopen. */
+  const [periodSelection,       setPeriodSelection]       = useState<PeriodSelection>(CURRENT_SELECTION)
+  const period = resolveSelection(periodSelection)
+  const changePeriod = useCallback((value: number) => {
+    setPeriodSelection((s) => selectPeriod(s, activeTab, value))
+  }, [activeTab])
 
-  const stats = useDashboardStats()
-  const { isViewingOther, viewAsName } = useViewAs()
+  const { isViewingOther, viewAsName, viewAsUserId, handleViewAsInvalid, clearViewAs, isClerkAdmin } = useViewAs()
+  const { showToast } = useToast()
+  const canEditOnline = useCanEditOnline()
+  usePrefetchEntrySheets()
   const tabSwipeRef = useRef<HTMLDivElement>(null)
   const mobileLayout = useMediaQueryMatch('(max-width: 639px)')
   const reduceMotion = useMediaQueryMatch('(prefers-reduced-motion: reduce)')
 
+  /** Change view; if the user scrolled deep into the list, bring the summary back into view. */
+  const changeTab = useCallback((next: View) => {
+    setActiveTab(next)
+    if (typeof window !== 'undefined' && window.scrollY > 240) {
+      window.scrollTo({ top: 0, behavior: reduceMotion ? 'auto' : 'smooth' })
+    }
+  }, [reduceMotion])
+
   const goTabNext = useCallback(() => {
-    setActiveTab((t) => (t === 'daily' ? 'weekly' : t === 'weekly' ? 'monthly' : t === 'monthly' ? 'yearly' : t))
+    setActiveTab((t) => VIEWS[Math.min(VIEWS.indexOf(t) + 1, VIEWS.length - 1)]!)
   }, [])
   const goTabPrev = useCallback(() => {
-    setActiveTab((t) => (t === 'yearly' ? 'monthly' : t === 'monthly' ? 'weekly' : t === 'weekly' ? 'daily' : t))
+    setActiveTab((t) => VIEWS[Math.max(VIEWS.indexOf(t) - 1, 0)]!)
   }, [])
 
   useHorizontalTabSwipe(tabSwipeRef, {
@@ -130,157 +220,226 @@ export default function Dashboard() {
     user?.fullName?.trim() ||
     [user?.firstName, user?.lastName].filter(Boolean).join(' ') ||
     user?.username?.trim() ||
+    // Snapshot mode (Clerk not loaded yet / offline): the last user on this phone.
+    (user ? '' : readLastUserHint()?.name.trim()) ||
     'there'
 
+  /** New categories need the server (only new sales / expenses save offline). */
+  const openAddCategory = () => {
+    if (!canEditOnline) {
+      showToast(OFFLINE_EDIT_MESSAGE, 'error')
+      return
+    }
+    setShowCategoryModal(true)
+  }
+
+  const actions = useMemo<DashboardActions | null>(
+    () => isViewingOther
+      ? null
+      : { openAddSale: () => setShowSaleModal(true), openAddExpense: () => setShowExpenseModal(true) },
+    [isViewingOther],
+  )
+
+  const backToMyData = () => {
+    clearViewAs()
+    showToast('Back to your own data', 'info')
+  }
+
   return (
-    <div className="min-h-dvh bg-background">
-      {/* ── Top bar ──────────────────────────────────────────────────────── */}
-      <header className="sticky top-0 z-40 bg-background/90 backdrop-blur-xl border-b border-border/50 pt-[max(0,env(safe-area-inset-top))]">
-        <div className="mx-auto px-4 sm:px-6 h-14 flex items-center justify-between gap-4 max-w-5xl">
-          {/* Logo */}
-          <Link to="/" className="flex items-center gap-2 shrink-0">
-            <div className="w-7 h-7 rounded-[8px] bg-gradient-brand flex items-center justify-center shadow-glow-sm">
-              <TrendingUp className="text-white" size={13} strokeWidth={2.5} />
-            </div>
-            <span className="font-logo text-[1.05rem] text-foreground hidden sm:block">RozNaama</span>
-          </Link> 
-
-          {/* Right side */}
-          <div className="flex items-center gap-2 ml-auto">
-            <ThemeSwitcher />
-            <UserButton
-              afterSignOutUrl="/"
-              appearance={{ elements: { avatarBox: 'w-8 h-8' } }}
-            />
-          </div>
-        </div>
-      </header>
-
-      {/* ── Main content ─────────────────────────────────────────────────── */}
-      <main className="mx-auto px-4 sm:px-6 py-6 pb-28 max-w-5xl">
-        <section aria-label="Greeting" className="mb-6">
-          <div className="flex items-start justify-between gap-3">
-            <p className="text-[0.9375rem] sm:text-lg leading-snug min-w-0 flex-1">
-              <span className="text-muted-foreground font-medium">{getGreeting()}, </span>
-              <span className="font-logo font-semibold text-gradient-brand">{displayName}</span>
-            </p>
-            <AdminAccessDialog />
-          </div>
-          {isViewingOther && viewAsName && (
-            <p className="text-xs text-muted-foreground mt-2">
-              Viewing {viewAsName}&apos;s data — recording and edits are disabled.
-            </p>
-          )}
-        </section>
-
-        {/* PWA Install CTA (only when not installed) */}
-        <AnimatePresence>
-          {canInstall && (
-            <motion.div
-              initial={{ opacity: 0, y: 8 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: 6 }}
-              transition={{ duration: 0.2, ease: [0.22, 1, 0.36, 1] }}
-              className="mb-6"
-            >
-              <button
-                onClick={install}
-                aria-label={isIOS ? 'Add to Home Screen' : 'Install app'}
-                title={isIOS ? 'Add to Home Screen' : 'Install App'}
-                className="w-full flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-sm font-semibold bg-primary/10 text-primary hover:bg-primary/20 active:scale-95 transition-all border border-border/60"
-              >
-                <Download size={16} />
-                <span className="whitespace-nowrap">
-                  {isIOS ? 'Add to Home Screen' : 'Install RozNaama'}
-                </span>
-              </button>
-            </motion.div>
-          )}
-        </AnimatePresence>
-
-        {/* Summary cards — tab aware */}
-        <section aria-label="Summary" className="mb-6">
-          <SummaryCards
-            stats={stats}
-            activeTab={activeTab}
-            onAddExpense={() => setShowExpenseModal(true)}
-            readOnly={isViewingOther}
-          />
-        </section>
-
-        {/* Tab bar */}
-        <div className="grid grid-cols-4 gap-1 p-1 rounded-xl bg-muted/50 border border-border/60 mb-4 w-full overflow-hidden">
-          {TABS.map((tab) => (
-            <button
-              key={tab.id}
-              onClick={() => setActiveTab(tab.id)}
-              aria-selected={activeTab === tab.id}
-              role="tab"
-              className={cn(
-                'min-w-0 flex items-center justify-center gap-1.5 py-2 px-2 sm:px-3 rounded-lg',
-                'text-[0.8rem] font-semibold transition-all duration-200 active:scale-95',
-                activeTab === tab.id
-                  ? 'bg-background text-foreground shadow-sm'
-                  : 'text-muted-foreground hover:text-foreground',
-              )}
-            >
-              {tab.icon}
-              <span className="hidden sm:inline">{tab.label}</span>
-            </button>
-          ))}
-        </div>
-        <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-2 sm:hidden">
-          {TAB_LABELS[activeTab]}
-        </p>
-
-        {/* Tab panels — swipe left/right on small screens to change period */}
-        <div
-          ref={tabSwipeRef}
-          className="min-h-48"
-          style={{ touchAction: 'pan-y' }}
+    <AmountVisibilityProvider>
+    <DashboardActionsContext.Provider value={actions}>
+      <div className="min-h-dvh bg-background">
+        {/* ── Top bar ──────────────────────────────────────────────────────── */}
+        <header
+          className="sticky top-0 z-40 bg-background/85 backdrop-blur-xl border-b border-border/60"
+          style={{ paddingTop: 'env(safe-area-inset-top)' }}
         >
-          <AnimatePresence mode="wait">
-            <motion.section
-              key={activeTab}
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -6 }}
-              transition={{ duration: 0.25, ease: [0.22, 1, 0.36, 1] }}
-              aria-label={`${activeTab} view`}
+          <div className="mx-auto px-4 sm:px-6 h-14 flex items-center justify-between gap-3 max-w-5xl">
+            <Link to="/" className="flex items-center gap-2 shrink-0 min-h-11 rounded-xl" aria-label="RozNaama home">
+              <div className="w-8 h-8 rounded-[10px] bg-gradient-brand flex items-center justify-center shadow-glow-sm">
+                <TrendingUp className="text-brand-foreground" size={16} strokeWidth={2.5} />
+              </div>
+              <span className="font-logo text-[1.0625rem] text-foreground">RozNaama</span>
+            </Link>
+
+            <div className="flex items-center gap-1.5 ml-auto">
+              <ThemeSwitcher />
+              <AccountMenu />
+            </div>
+          </div>
+        </header>
+
+        {/* ── Main content ─────────────────────────────────────────────────── */}
+        <main className="mx-auto px-4 sm:px-6 pt-5 pb-[calc(7.5rem+env(safe-area-inset-bottom))] sm:pb-32 max-w-5xl">
+          <section aria-label="Greeting" className="mb-5">
+            <div className="flex items-center justify-between gap-3">
+              <div className="min-w-0 flex-1">
+                <p className="text-sm font-medium text-muted-foreground">{getGreeting()},</p>
+                <p className="text-xl sm:text-2xl font-logo font-bold text-foreground truncate">{displayName}</p>
+                <DataFreshnessChip className="mt-1.5" />
+              </div>
+              <div className="flex items-center gap-1.5 shrink-0">
+                {/* Admin-only code: never downloaded for shopkeepers. */}
+                {isClerkAdmin && (
+                  <Suspense fallback={null}>
+                    <AdminAccessDialog />
+                  </Suspense>
+                )}
+                <AmountVisibilityToggle />
+              </div>
+            </div>
+          </section>
+
+          {/* Admin read-only banner */}
+          {isViewingOther && viewAsName && (
+            <div
+              role="status"
+              className="mb-5 flex items-center gap-3 rounded-3xl border border-warning/40 bg-warning/10 px-4 py-3"
             >
-              {activeTab === 'daily'   && <DailyTab />}
-              {activeTab === 'weekly'  && <WeeklyChart />}
-              {activeTab === 'monthly' && <MonthlyChart />}
-              {activeTab === 'yearly' && <YearlyChart />}
-            </motion.section>
+              <Eye size={18} className="text-warning shrink-0" aria-hidden />
+              <p className="flex-1 min-w-0 text-[15px] text-foreground">
+                Viewing <span className="font-bold">{viewAsName}</span>&apos;s data — recording and edits are disabled.
+              </p>
+              <button
+                type="button"
+                onClick={backToMyData}
+                className="shrink-0 inline-flex items-center gap-1.5 min-h-11 px-3.5 rounded-2xl bg-card border border-border text-sm font-semibold text-foreground active:scale-[0.97] transition-all"
+              >
+                <ArrowLeft size={16} aria-hidden /> My data
+              </button>
+            </div>
+          )}
+
+          {/* PWA Install CTA (only when not installed) */}
+          <AnimatePresence>
+            {canInstall && (
+              <motion.div
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: 6 }}
+                transition={{ duration: 0.2, ease: [0.22, 1, 0.36, 1] }}
+                className="mb-5"
+              >
+                <button
+                  type="button"
+                  onClick={install}
+                  aria-label={isIOS ? 'Add to Home Screen' : 'Install app'}
+                  title={isIOS ? 'Add to Home Screen' : 'Install App'}
+                  className="w-full flex items-center gap-3 min-h-14 px-4 py-3 rounded-3xl text-left bg-primary/8 border border-primary/25 hover:bg-primary/12 active:scale-[0.97] transition-all"
+                >
+                  <span className="w-10 h-10 rounded-2xl bg-gradient-brand text-brand-foreground flex items-center justify-center shrink-0" aria-hidden>
+                    <Download size={18} />
+                  </span>
+                  <span className="flex-1 min-w-0">
+                    <span className="block text-[15px] font-bold text-foreground">
+                      {isIOS ? 'Add to Home Screen' : 'Install RozNaama'}
+                    </span>
+                    <span className="block text-[13px] text-muted-foreground">Open it like an app, even with weak internet.</span>
+                  </span>
+                </button>
+              </motion.div>
+            )}
           </AnimatePresence>
-        </div>
-      </main>
 
-      {/* ── FAB ──────────────────────────────────────────────────────────── */}
-      <FAB
-        disabled={isViewingOther}
-        onAddCategory={() => setShowCategoryModal(true)}
-        onAddSale={()     => setShowSaleModal(true)}
-        onManageCategories={() => setShowManageCategoriesModal(true)}
-      />
+          {/* Summary cards — tab aware */}
+          <section aria-labelledby="summary-heading" className="mb-5">
+            <h2 id="summary-heading" className="sr-only">
+              {periodTitle(activeTab, period[activeTab])}
+            </h2>
+            <QueryErrorBoundary
+              isViewingOther={isViewingOther}
+              onViewAsInvalid={handleViewAsInvalid}
+              resetKeys={[viewAsUserId]}
+            >
+              <PeriodSummary
+                view={activeTab}
+                value={period[activeTab]}
+                onChange={changePeriod}
+                onAddExpense={() => setShowExpenseModal(true)}
+                readOnly={isViewingOther}
+              />
+            </QueryErrorBoundary>
+          </section>
 
-      {/* ── Modals ───────────────────────────────────────────────────────── */}
-      {showCategoryModal && (
-        <AddCategoryModal onClose={() => setShowCategoryModal(false)} />
-      )}
-      {showSaleModal && (
-        <AddSaleModal onClose={() => setShowSaleModal(false)} />
-      )}
-      {showExpenseModal && (
-        <AddExpenseModal onClose={() => setShowExpenseModal(false)} />
-      )}
-      {showManageCategoriesModal && (
-        <ManageCategoriesModal onClose={() => setShowManageCategoriesModal(false)} />
-      )}
-      {showIOSInstallModal && (
-        <IOSInstallModal onClose={() => setShowIOSInstallModal(false)} />
-      )}
-    </div>
+          {/* Period tabs (tablet / desktop) — phones use the bottom bar */}
+          <div className="mb-4">
+            <SegmentedTabs active={activeTab} onChange={changeTab} />
+          </div>
+
+          {/* Tab panel — swipe left/right on phones to change period */}
+          <div
+            ref={tabSwipeRef}
+            className="min-h-48"
+            style={{ touchAction: 'pan-y' }}
+          >
+            <AnimatePresence mode="wait" initial={false}>
+              <motion.section
+                key={activeTab}
+                id={VIEW_PANEL_ID}
+                role="tabpanel"
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, transition: { duration: 0.1 } }}
+                transition={{ duration: 0.18, ease: [0.22, 1, 0.36, 1] }}
+                aria-label={`${activeTab} view`}
+              >
+                <QueryErrorBoundary
+                  isViewingOther={isViewingOther}
+                  onViewAsInvalid={handleViewAsInvalid}
+                  resetKeys={[viewAsUserId]}
+                >
+                  {activeTab === 'daily'   && <DailyTab day={period.daily} />}
+                  <Suspense fallback={<ChartViewSkeleton />}>
+                    {activeTab === 'weekly'  && <WeeklyChart week={period.weekly} />}
+                    {activeTab === 'monthly' && <MonthlyChart month={period.monthly} />}
+                    {activeTab === 'yearly'  && <YearlyChart year={period.yearly} />}
+                  </Suspense>
+                </QueryErrorBoundary>
+              </motion.section>
+            </AnimatePresence>
+          </div>
+        </main>
+
+        {/* ── Bottom tab bar (phones) + FAB ─────────────────────────────────── */}
+        <BottomNav active={activeTab} onChange={changeTab} reserveFabSpace={!isViewingOther} />
+        <FAB
+          disabled={isViewingOther}
+          onAddCategory={openAddCategory}
+          onAddSale={()     => setShowSaleModal(true)}
+          onAddExpense={()  => setShowExpenseModal(true)}
+          onManageCategories={() => setShowManageCategoriesModal(true)}
+        />
+
+        {/* ── Modals (write actions never open in read-only view-as) ─────────── */}
+        <Suspense fallback={<SheetFallback />}>
+        {showCategoryModal && !isViewingOther && (
+          <AddCategoryModal onClose={() => setShowCategoryModal(false)} />
+        )}
+        {showSaleModal && !isViewingOther && (
+          <ModalQueryBoundary onClose={() => setShowSaleModal(false)}>
+            <AddSaleModal onClose={() => setShowSaleModal(false)} />
+          </ModalQueryBoundary>
+        )}
+        {showExpenseModal && !isViewingOther && (
+          <AddExpenseModal onClose={() => setShowExpenseModal(false)} />
+        )}
+        {showManageCategoriesModal && !isViewingOther && (
+          <ModalQueryBoundary onClose={() => setShowManageCategoriesModal(false)}>
+            <ManageCategoriesModal
+              onClose={() => setShowManageCategoriesModal(false)}
+              onAddCategory={() => {
+                setShowManageCategoriesModal(false)
+                setShowCategoryModal(true)
+              }}
+            />
+          </ModalQueryBoundary>
+        )}
+        {showIOSInstallModal && (
+          <IOSInstallModal onClose={() => setShowIOSInstallModal(false)} />
+        )}
+        </Suspense>
+      </div>
+    </DashboardActionsContext.Provider>
+    </AmountVisibilityProvider>
   )
 }

@@ -1,49 +1,53 @@
+import { useMemo } from 'react'
+import { CalendarDays } from 'lucide-react'
 import SalesList from './SalesList'
-import { usePaginatedSessions } from '@/hooks/useSales'
+import DayFeedSkeleton from './DayFeedSkeleton'
+import EmptyState from '@/components/shared/EmptyState'
 import { useCategories } from '@/hooks/useCategories'
-import { usePaginatedExpenses } from '@/hooks/useExpenses'
-import { Loader2 } from 'lucide-react'
+import { useDayFeed } from '@/hooks/useDayFeed'
+import { toDayGroups } from '@/lib/dayGroups'
+import { dayLabel, dayRange, isCurrentPeriod } from '@/lib/period'
 
-const PAGE_SIZE = 20
+interface DailyTabProps {
+  /** Selected day (local midnight ms). */
+  day: number
+}
 
-export default function DailyTab() {
-  const sessionsResult = usePaginatedSessions(PAGE_SIZE)
-  const expensesResult = usePaginatedExpenses(PAGE_SIZE)
-  const sessions = sessionsResult.results
+/** One day's sales and expenses, expanded. */
+export default function DailyTab({ day }: DailyTabProps) {
+  const { start, end } = dayRange(day)
+  const feed = useDayFeed({ startDate: start, endDate: end }, 1)
   const categories = useCategories()
-  const expenses = expensesResult.results
+  const days = useMemo(() => toDayGroups(feed.results), [feed.results])
+  const isToday = isCurrentPeriod('day', day)
 
-  if (categories === undefined) {
+  if (categories === undefined || feed.status === 'LoadingFirstPage') {
     return (
-      <div className="flex flex-col gap-3 pt-2">
-        {Array.from({ length: 3 }).map((_, i) => (
-          <div key={i} className="skeleton h-20 rounded-2xl" />
-        ))}
+      <div className="pt-2">
+        <DayFeedSkeleton count={1} />
+      </div>
+    )
+  }
+
+  if (days.length === 0) {
+    const label = dayLabel(day)
+    return (
+      <div className="pt-2">
+        <EmptyState
+          icon={<CalendarDays size={48} strokeWidth={1.5} />}
+          title={isToday ? 'No sales today yet' : label === 'Yesterday' ? 'No sales yesterday' : `No sales on ${label}`}
+          message={isToday
+            ? 'Tap the + button to record your first sale or expense of the day.'
+            : 'Nothing was recorded on this day.'}
+          showActions={isToday}
+        />
       </div>
     )
   }
 
   return (
-    <div className="pt-2 space-y-4">
-      <SalesList sessions={sessions} expenses={expenses} categories={categories} />
-      {(sessionsResult.status !== 'Exhausted' || expensesResult.status !== 'Exhausted') && (
-        <div className="flex justify-center">
-          <button
-            type="button"
-            onClick={() => {
-              if (sessionsResult.status === 'CanLoadMore') sessionsResult.loadMore(PAGE_SIZE)
-              if (expensesResult.status === 'CanLoadMore') expensesResult.loadMore(PAGE_SIZE)
-            }}
-            disabled={sessionsResult.status === 'LoadingMore' || expensesResult.status === 'LoadingMore'}
-            className="inline-flex items-center gap-2 px-4 py-2 rounded-xl border border-border/70 bg-card text-sm font-semibold text-foreground hover:bg-muted/30 disabled:opacity-60 disabled:cursor-not-allowed active:scale-[0.97] transition-all"
-          >
-            {(sessionsResult.status === 'LoadingMore' || expensesResult.status === 'LoadingMore') && (
-              <Loader2 size={16} className="animate-spin" />
-            )}
-            <span>Show More</span>
-          </button>
-        </div>
-      )}
+    <div className="pt-2">
+      <SalesList days={days} categories={categories} expandAll />
     </div>
   )
 }

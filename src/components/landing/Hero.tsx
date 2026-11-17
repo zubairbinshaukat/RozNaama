@@ -1,4 +1,4 @@
-import { ArrowRight, BarChart3, TrendingUp, DollarSign } from 'lucide-react'
+import { ArrowRight, BarChart3, TrendingUp, Wallet } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { useAuth } from '@clerk/clerk-react'
 import { motion } from 'framer-motion'
@@ -23,7 +23,7 @@ export default function Hero() {
     >
       {/* Global background gradients */}
       <div aria-hidden className="absolute -top-60 -right-60 w-[700px] h-[700px] rounded-full bg-brand-500/8 blur-[120px] pointer-events-none" />
-      <div aria-hidden className="absolute -bottom-40 -left-60 w-[600px] h-[600px] rounded-full bg-purple-500/8 blur-[100px] pointer-events-none" />
+      <div aria-hidden className="absolute -bottom-40 -left-60 w-[600px] h-[600px] rounded-full bg-primary/8 blur-[100px] pointer-events-none" />
       <div aria-hidden className="absolute inset-0 bg-dot-pattern bg-dot-md opacity-30 pointer-events-none" />
 
       <div className="relative mx-auto px-4 sm:px-6 py-20 lg:py-32 w-full max-w-[1300px]">
@@ -33,7 +33,7 @@ export default function Hero() {
           <div className="flex flex-col gap-7">
             <motion.div {...fadeUp(0)}>
               <Badge variant="secondary" className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-full">
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                <span className="w-1.5 h-1.5 rounded-full bg-success animate-pulse" />
                 Now in Beta — Free for small businesses
               </Badge>
             </motion.div>
@@ -60,14 +60,14 @@ export default function Hero() {
             <motion.div {...fadeUp(0.3)} className="flex flex-col sm:flex-row gap-3">
               {isLoaded && isSignedIn ? (
                 <Link to="/dashboard">
-                  <Button size="lg" className="bg-gradient-brand hover:opacity-90 text-white border-0 gap-2 shadow-glow-md rounded-full px-7 active:scale-[0.97]">
+                  <Button size="lg" className="bg-gradient-brand hover:brightness-105 text-brand-foreground border-0 gap-2 shadow-glow-md rounded-full px-7 min-h-12 text-base active:scale-[0.97]">
                     Go to Dashboard
                     <ArrowRight className="w-4 h-4" />
                   </Button>
                 </Link>
               ) : (
                 <Link to="/sign-up">
-                  <Button size="lg" className="bg-gradient-brand hover:opacity-90 text-white border-0 gap-2 shadow-glow-md rounded-full px-7 active:scale-[0.97]">
+                  <Button size="lg" className="bg-gradient-brand hover:brightness-105 text-brand-foreground border-0 gap-2 shadow-glow-md rounded-full px-7 min-h-12 text-base active:scale-[0.97]">
                     Get Started Free
                     <ArrowRight className="w-4 h-4" />
                   </Button>
@@ -107,17 +107,18 @@ export default function Hero() {
               className="relative z-10 w-full max-w-sm bg-card border border-border/60 rounded-2xl p-6 animate-float"
               style={{ boxShadow: '0 20px 60px -10px hsl(var(--primary)/0.18), 0 4px 20px -4px rgb(0 0 0 / 0.12)' }}
             >
-              {/* Card header */}
-              <div className="flex items-center justify-between mb-6">
-                <div>
-                  <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider">Today's Sales</p>
-                  <p className="text-[1.75rem] font-logo font-bold text-foreground tracking-tight">PKR 84,200</p>
-                </div>
-                <div className="w-11 h-11 rounded-2xl bg-gradient-brand flex items-center justify-center shadow-glow-sm">
-                  <TrendingUp className="w-5 h-5 text-white" />
-                </div>
+              {/* Wallet-style balance (mirrors the dashboard hero card) */}
+              <div className="relative overflow-hidden rounded-2xl bg-gradient-brand text-brand-foreground p-4 mb-5">
+                <div aria-hidden className="absolute -right-8 -top-10 w-32 h-32 rounded-full bg-brand-foreground/10" />
+                <p className="relative text-sm font-semibold opacity-90">Today&apos;s total sales</p>
+                <p className="relative flex items-baseline gap-1.5 mt-1">
+                  <span className="text-base font-semibold opacity-85">PKR</span>
+                  <span className="text-[2rem] font-bold tabular tracking-tight leading-none">84,200</span>
+                </p>
+                <p className="relative text-sm font-medium opacity-90 mt-2 flex items-center gap-1.5">
+                  <TrendingUp size={16} aria-hidden /> 12 sales today
+                </p>
               </div>
-
               {/* Mini bar chart */}
               <div className="flex items-end gap-1.5 h-20 mb-5" aria-label="Sales trend chart">
                 {[40, 65, 45, 80, 55, 90, 70].map((h, i) => (
@@ -133,11 +134,11 @@ export default function Hero() {
               {/* Stat chips */}
               <div className="grid grid-cols-2 gap-3">
                 <StatChip icon={BarChart3}  label="Entries"  value="12" />
-                <StatChip icon={DollarSign} label="Avg. Sale" value="PKR 7k" />
+                <StatChip icon={Wallet} label="Profit" value="PKR 61,500" />
               </div>
 
               {/* Decorative trend badge */}
-              <div className="mt-4 flex items-center gap-1.5 text-xs text-emerald-500 font-semibold">
+              <div className="mt-4 flex items-center gap-1.5 text-xs text-positive font-semibold">
                 <TrendingUp size={12} />
                 +18% vs yesterday
               </div>
@@ -154,7 +155,7 @@ function StatChip({ icon: Icon, label, value }: { icon: React.ElementType; label
   return (
     <div className="bg-muted/40 border border-border/50 rounded-xl p-3">
       <Icon className="w-4 h-4 text-primary mb-1.5" />
-      <p className="text-[10px] text-muted-foreground font-semibold uppercase tracking-wider">{label}</p>
+      <p className="text-xs text-muted-foreground font-semibold uppercase tracking-wider">{label}</p>
       <p className="text-sm font-bold text-foreground mt-0.5">{value}</p>
     </div>
   )

@@ -37,22 +37,19 @@ export const THEME_IS_DARK: Record<Theme, boolean> = {
   sunset:   true,
 }
 
-/** Color swatches for the Add Category modal */
-export const CATEGORY_COLORS = [
-  '#6366F1',  // indigo
-  '#8B5CF6',  // violet
-  '#EC4899',  // pink
-  '#EF4444',  // red
-  '#F97316',  // orange
-  '#EAB308',  // yellow
-  '#22C55E',  // green
-  '#06B6D4',  // cyan
-] as const
-
-export type CategoryColor = (typeof CATEGORY_COLORS)[number]
+/**
+ * Shared with the Convex backend (single source of truth):
+ * category color swatches, max items per Add Sale modal, and text/amount limits.
+ */
+export {
+  CATEGORY_COLORS,
+  MAX_SALE_ITEMS,
+  PRODUCT_NAME_MAX,
+  NOTE_MAX,
+  CATEGORY_NAME_MAX,
+  AMOUNT_MAX,
+} from '../../convex/lib/limits'
+export type { CategoryColor } from '../../convex/lib/limits'
 
 /** Toast auto-dismiss delay (ms) */
 export const TOAST_DURATION = 4000
-
-/** Max items per Add Sale modal */
-export const MAX_SALE_ITEMS = 20

@@ -5,11 +5,18 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type ReactNode,
 } from 'react'
 import { useUser } from '@clerk/clerk-react'
+import { useQuery } from 'convex/react'
+import { api } from '../../convex/_generated/api'
 import type { Id } from '../../convex/_generated/dataModel'
+import { useToast } from '@/components/shared/Toast'
+import LoadingScreen from '@/components/shared/LoadingScreen'
+
+const VIEW_AS_UNAVAILABLE_MESSAGE = 'That user is no longer available'
 
 type ViewAsContextValue = {
   /** Convex user id to scope read queries, or null when viewing own data */
@@ -21,6 +28,10 @@ type ViewAsContextValue = {
   clearViewAs:  () => void
   /** Pass into Convex query args (omit when not impersonating) */
   viewAsUserIdForQuery: Id<'users'> | undefined
+  /** True while a view-as target restored from sessionStorage is being validated. */
+  isResolvingViewAs: boolean
+  /** Drop back to own data after the target became invalid (deleted / forbidden) + toast. */
+  handleViewAsInvalid: () => void
 }
 
 const ViewAsContext = createContext<ViewAsContextValue | null>(null)
@@ -33,10 +44,33 @@ function parseAdminRole(publicMetadata: unknown): boolean {
   return role === 'Admin'
 }
 
+function readStoredViewAsId(storageKey: string): string | null {
+  try {
+    const raw = sessionStorage.getItem(storageKey)
+    if (!raw) return null
+    const parsed: unknown = JSON.parse(raw)
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+      const id = (parsed as { viewAsUserId?: unknown }).viewAsUserId
+      if (typeof id === 'string' && id.length > 0) return id
+    }
+  } catch {
+    /* ignore corrupt storage */
+  }
+  return null
+}
+
 export function ViewAsProvider({ children }: { children: ReactNode }) {
   const { user, isLoaded } = useUser()
+  const { showToast } = useToast()
   const [viewAsUserId, setViewAsUserId] = useState<Id<'users'> | null>(null)
   const [viewAsName, setViewAsName] = useState<string | null>(null)
+  /** Restored id awaiting server validation (never used for data queries). */
+  const [pendingId, setPendingId] = useState<string | null>(null)
+  /** Storage key whose saved view-as has already been read. */
+  const [restoredKey, setRestoredKey] = useState<string | null>(null)
+  /** Guards against handling the same validation result / invalidation twice. */
+  const handledPendingRef = useRef<string | null>(null)
+  const invalidatedIdRef = useRef<Id<'users'> | null>(null)
 
   const storageKey = user?.id ? `roznaama-admin-view-as-${user.id}` : null
 
@@ -44,41 +78,6 @@ export function ViewAsProvider({ children }: { children: ReactNode }) {
     () => (user ? parseAdminRole(user.publicMetadata) : false),
     [user],
   )
-
-  useEffect(() => {
-    if (!isLoaded) return
-
-    const run = () => {
-      if (!user || !isClerkAdmin) {
-        setViewAsUserId(null)
-        setViewAsName(null)
-        if (storageKey) {
-          try {
-            sessionStorage.removeItem(storageKey)
-          } catch {
-            /* ignore */
-          }
-        }
-        return
-      }
-
-      if (!storageKey) return
-
-      try {
-        const raw = sessionStorage.getItem(storageKey)
-        if (!raw) return
-        const parsed = JSON.parse(raw) as { viewAsUserId?: string; viewAsName?: string }
-        if (typeof parsed.viewAsUserId === 'string' && typeof parsed.viewAsName === 'string') {
-          setViewAsUserId(parsed.viewAsUserId as Id<'users'>)
-          setViewAsName(parsed.viewAsName)
-        }
-      } catch {
-        /* ignore corrupt storage */
-      }
-    }
-
-    queueMicrotask(run)
-  }, [isLoaded, user, isClerkAdmin, storageKey])
 
   const persist = useCallback(
     (id: Id<'users'> | null, name: string | null) => {
@@ -96,24 +95,98 @@ export function ViewAsProvider({ children }: { children: ReactNode }) {
     [storageKey],
   )
 
+  // Restore a saved view-as target into the *pending* state (validated below).
+  useEffect(() => {
+    if (!isLoaded) return
+
+    const run = () => {
+      if (!user || !isClerkAdmin) {
+        setViewAsUserId(null)
+        setViewAsName(null)
+        setPendingId(null)
+        setRestoredKey(storageKey)
+        if (storageKey) {
+          try {
+            sessionStorage.removeItem(storageKey)
+          } catch {
+            /* ignore */
+          }
+        }
+        return
+      }
+
+      if (!storageKey || restoredKey === storageKey) return
+
+      // New Clerk user (or first load): never carry a previous user's target over.
+      setViewAsUserId(null)
+      setViewAsName(null)
+      setPendingId(readStoredViewAsId(storageKey))
+      setRestoredKey(storageKey)
+    }
+
+    queueMicrotask(run)
+  }, [isLoaded, user, isClerkAdmin, storageKey, restoredKey])
+
+  const validation = useQuery(
+    api.users.validateViewAsTarget,
+    isClerkAdmin && pendingId ? { userId: pendingId } : 'skip',
+  )
+
+  useEffect(() => {
+    if (!pendingId || validation === undefined) return
+    if (handledPendingRef.current === pendingId) return
+    handledPendingRef.current = pendingId
+
+    const pending = pendingId
+    queueMicrotask(() => {
+      if (validation === null) {
+        persist(null, null)
+        setViewAsUserId(null)
+        setViewAsName(null)
+        showToast(VIEW_AS_UNAVAILABLE_MESSAGE, 'error')
+      } else {
+        // Commit with the fresh server-side name (it may have changed).
+        setViewAsUserId(validation._id)
+        setViewAsName(validation.name)
+        persist(validation._id, validation.name)
+      }
+      setPendingId((current) => (current === pending ? null : current))
+      handledPendingRef.current = null
+    })
+  }, [pendingId, validation, persist, showToast])
+
   const setViewAs = useCallback(
     (id: Id<'users'>, name: string) => {
+      setPendingId(null)
       setViewAsUserId(id)
       setViewAsName(name)
       persist(id, name)
+      invalidatedIdRef.current = null
     },
     [persist],
   )
 
   const clearViewAs = useCallback(() => {
+    setPendingId(null)
     setViewAsUserId(null)
     setViewAsName(null)
     persist(null, null)
   }, [persist])
 
+  const handleViewAsInvalid = useCallback(() => {
+    // Several boundaries may report the same invalid target in one commit — toast once.
+    if (viewAsUserId !== null && invalidatedIdRef.current === viewAsUserId) return
+    invalidatedIdRef.current = viewAsUserId
+    clearViewAs()
+    showToast(VIEW_AS_UNAVAILABLE_MESSAGE, 'error')
+  }, [viewAsUserId, clearViewAs, showToast])
+
   const isViewingOther = viewAsUserId !== null
 
   const viewAsUserIdForQuery = viewAsUserId ?? undefined
+
+  const isResolvingViewAs =
+    isLoaded && isClerkAdmin && storageKey !== null && (restoredKey !== storageKey || pendingId !== null)
 
   const value = useMemo(
     (): ViewAsContextValue => ({
@@ -124,6 +197,8 @@ export function ViewAsProvider({ children }: { children: ReactNode }) {
       setViewAs,
       clearViewAs,
       viewAsUserIdForQuery,
+      isResolvingViewAs,
+      handleViewAsInvalid,
     }),
     [
       viewAsUserId,
@@ -133,10 +208,18 @@ export function ViewAsProvider({ children }: { children: ReactNode }) {
       setViewAs,
       clearViewAs,
       viewAsUserIdForQuery,
+      isResolvingViewAs,
+      handleViewAsInvalid,
     ],
   )
 
-  return <ViewAsContext.Provider value={value}>{children}</ViewAsContext.Provider>
+  return (
+    <ViewAsContext.Provider value={value}>
+      {/* Don't mount data consumers until a restored target is validated, so an
+          admin never sees a flash of their own data (or a stale target's). */}
+      {isResolvingViewAs ? <LoadingScreen message="Restoring your view…" /> : children}
+    </ViewAsContext.Provider>
+  )
 }
 
 export function useViewAs(): ViewAsContextValue {

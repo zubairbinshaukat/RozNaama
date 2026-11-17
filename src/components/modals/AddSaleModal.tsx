@@ -1,22 +1,29 @@
-import { useState, useRef, useEffect, useCallback } from 'react'
-import { X, Plus, Check, Loader2, AlertCircle, ShoppingBag, Calendar } from 'lucide-react'
+import { useState, useRef, useCallback, useId } from 'react'
+import { X, Plus, Check, Loader2, AlertCircle, ShoppingBag, StickyNote } from 'lucide-react'
 import { motion } from 'framer-motion'
-import { Button } from '@/components/ui/button'
-import {
-  cn,
-  formatCurrency,
-  startOfDay,
-  toDateInputValue,
-  parseSaleDateInputClamped,
-  clampSaleDateToTodayMs,
-  maxSaleDateMs,
-} from '@/lib/utils'
-import { useRecordSales } from '@/hooks/useSales'
-import { useCategories } from '@/hooks/useCategories'
+import { cn, formatCurrency, formatDate, startOfDay, clampSaleDateToTodayMs } from '@/lib/utils'
+import { btnPrimary, btnSecondary, fieldError, fieldLabel, inputBase, inputInvalid } from '@/lib/ui'
+import { checkAmount } from '@/lib/amount'
+import { useSubmitEntry } from '@/hooks/useSubmitEntry'
+import { useCategories, type Category } from '@/hooks/useCategories'
+import { useFormatMoney } from '@/context/amountVisibility'
+import { queuedToast } from './submitToasts'
+import { useEntryHistory } from '@/hooks/useEntryHistory'
 import { useToast } from '@/components/shared/Toast'
+import Sheet, { SheetBody, SheetFooter, SheetHeader } from '@/components/shared/Sheet'
+import AmountInput from '@/components/shared/AmountInput'
+import DateField from '@/components/shared/DateField'
 import CategorySelect from '@/components/shared/CategorySelect'
-import { useVisualViewportBottomInset } from '@/hooks/useVisualViewportInset'
-import { MAX_SALE_ITEMS } from '@/lib/constants'
+import SuggestionChips from '@/components/shared/SuggestionChips'
+import { MAX_SALE_ITEMS, NOTE_MAX, PRODUCT_NAME_MAX } from '@/lib/constants'
+import { getErrorMessage } from '@/lib/errors'
+import {
+  forgetSaleProduct,
+  recordSaleProducts,
+  restoreSaleProduct,
+  suggestSaleProducts,
+  type SaleProductEntry,
+} from '@/lib/entryHistory'
 import type { Id } from '../../../convex/_generated/dataModel'
 
 // ── Types ──────────────────────────────────────────────────────────────────
@@ -32,6 +39,24 @@ interface SaleRow {
 interface RowErrors {
   productName?: string
   amount?:      string
+}
+
+interface SaleItemInput {
+  productName: string
+  amount:      number
+  categoryId?: Id<'categories'>
+  note?:       string
+}
+
+/** categoryId → name for the items' categories (pending rows show it offline). */
+function labelsFor(items: SaleItemInput[], categories: Category[] | undefined): Record<string, string> | undefined {
+  const labels: Record<string, string> = {}
+  for (const item of items) {
+    if (!item.categoryId) continue
+    const cat = categories?.find((c) => c._id === item.categoryId)
+    if (cat) labels[item.categoryId] = cat.name
+  }
+  return Object.keys(labels).length > 0 ? labels : undefined
 }
 
 const emptyRow = (): SaleRow => ({
@@ -55,35 +80,16 @@ export default function AddSaleModal({ onClose }: AddSaleModalProps) {
   const [topError, setTopError] = useState<string | null>(null)
   const [saleDateMs, setSaleDateMs] = useState(() => startOfDay())
 
-  const recordSales = useRecordSales()
+  const { submitSale } = useSubmitEntry()
   const categories  = useCategories()
+  const money       = useFormatMoney()
+  const { userId, history } = useEntryHistory()
   const { showToast } = useToast()
-  const keyboardInset = useVisualViewportBottomInset()
+  const titleId = useId()
   const firstInputRef = useRef<HTMLInputElement>(null)
-  const scrollContainerRef = useRef<HTMLDivElement>(null)
-  const saleDateInputRef = useRef<HTMLInputElement>(null)
+  const formRef = useRef<HTMLFormElement>(null)
 
-  useEffect(() => { firstInputRef.current?.focus() }, [])
-
-  useEffect(() => {
-    const handler = (e: FocusEvent) => {
-      const target = e.target as HTMLElement | null
-      const scroller = scrollContainerRef.current
-      if (!target || !scroller) return
-      if (scroller.contains(target)) {
-        target.scrollIntoView({ block: 'nearest', inline: 'nearest' })
-      }
-    }
-    document.addEventListener('focusin', handler)
-    return () => document.removeEventListener('focusin', handler)
-  }, [])
-
-  useEffect(() => {
-    if (saving) return
-    const h = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
-    document.addEventListener('keydown', h)
-    return () => document.removeEventListener('keydown', h)
-  }, [onClose, saving])
+  const close = () => { if (!saving) onClose() }
 
   const total = rows.reduce((sum, r) => {
     const v = parseFloat(r.amount)
@@ -100,9 +106,37 @@ export default function AddSaleModal({ onClose }: AddSaleModalProps) {
     })
   }, [])
 
+  /** Chip tap: fill the whole row (explicit, so it overwrites a typed amount). */
+  const fillRow = (id: string, entry: SaleProductEntry) => {
+    const categoryStillExists =
+      entry.categoryId !== undefined && (categories ?? []).some((c) => c._id === entry.categoryId)
+    setRows((prev) => prev.map((r) => r.id === id
+      ? {
+          ...r,
+          productName: entry.name.slice(0, PRODUCT_NAME_MAX),
+          amount:      String(entry.lastAmount),
+          categoryId:  categoryStillExists ? (entry.categoryId ?? '') : '',
+        }
+      : r))
+    setErrors((prev) => ({ ...prev, [id]: {} }))
+  }
+
+  const forgetSuggestion = (name: string) => {
+    const removed = forgetSaleProduct(userId, name)
+    if (!removed) return
+    showToast(`Removed "${removed.name}"`, 'info', {
+      action: { label: 'Undo', onAction: () => restoreSaleProduct(userId, removed) },
+    })
+  }
+
   const addRow = () => {
     if (rows.length >= MAX_SALE_ITEMS) return
-    setRows((prev) => [...prev, emptyRow()])
+    const row = emptyRow()
+    setRows((prev) => [...prev, row])
+    // Focus the new item's amount (first field) once it renders.
+    requestAnimationFrame(() => {
+      formRef.current?.querySelector<HTMLInputElement>(`[data-row-amount="${row.id}"] input`)?.focus()
+    })
   }
 
   const removeRow = (id: string) => {
@@ -117,248 +151,176 @@ export default function AddSaleModal({ onClose }: AddSaleModalProps) {
     for (const row of rows) {
       const rowErr: RowErrors = {}
       if (!row.productName.trim()) {
-        rowErr.productName = 'Product name is required.'
+        rowErr.productName = 'Write what you sold.'
         valid = false
       }
-      const amt = parseFloat(row.amount)
-      if (isNaN(amt) || amt <= 0) {
-        rowErr.amount = 'Enter a valid amount greater than 0.'
+      const amt = checkAmount(row.amount)
+      if (!amt.ok) {
+        rowErr.amount = amt.message
         valid = false
       }
       if (Object.keys(rowErr).length > 0) newErrors[row.id] = rowErr
     }
 
     setErrors(newErrors)
+    if (!valid) {
+      requestAnimationFrame(() => {
+        formRef.current?.querySelector<HTMLElement>('[aria-invalid="true"]')?.focus()
+      })
+    }
     return valid
+  }
+
+  /** The one place this sheet writes: server, or this phone's outbox when offline. */
+  const submitSales = (items: SaleItemInput[], sessionDate: number) => {
+    const categoryLabels = labelsFor(items, categories)
+    return submitSale({
+      items: items.map((i) => ({
+        productName: i.productName,
+        amount:      i.amount,
+        ...(i.categoryId ? { categoryId: i.categoryId } : {}),
+        ...(i.note ? { note: i.note } : {}),
+      })),
+      sessionDate,
+      ...(categoryLabels ? { categoryLabels } : {}),
+    })
   }
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!validate()) return
+    if (saving || !validate()) return
 
     setSaving(true)
     setTopError(null)
 
     try {
-      const items = rows.map((r) => ({
+      const items: SaleItemInput[] = rows.map((r) => ({
         productName: r.productName.trim(),
         amount:      parseFloat(r.amount),
         categoryId:  r.categoryId ? (r.categoryId as Id<'categories'>) : undefined,
         note:        r.note.trim() || undefined,
       }))
 
-      const result = await recordSales({
-        items,
-        sessionDate: clampSaleDateToTodayMs(saleDateMs),
-      }) as { itemCount: number; totalAmount: number }
-      const msg = `${result.itemCount} sale${result.itemCount !== 1 ? 's' : ''} recorded! Total: ${formatCurrency(result.totalAmount)}`
-      showToast(msg, 'success')
+      const outcome = await submitSales(items, clampSaleDateToTodayMs(saleDateMs))
+      // Saved on the server or on this phone: either way the entry is kept.
+      recordSaleProducts(userId, items.map((i) => ({
+        name: i.productName, amount: i.amount, categoryId: i.categoryId,
+      })))
+      if (outcome.status === 'saved') {
+        const { itemCount, totalAmount } = outcome.result
+        showToast(`Saved · ${itemCount} sale${itemCount !== 1 ? 's' : ''}, ${money(totalAmount)}`, 'success')
+      } else {
+        const t = queuedToast(outcome.problem)
+        showToast(t.message, t.type)
+      }
       onClose()
-    } catch {
-      setTopError('Could not save sales. Please check your connection and try again.')
+    } catch (e) {
+      const message = getErrorMessage(e, 'Could not save sales. Please check your connection and try again.')
+      setTopError(message)
+      showToast(message, 'error')
     } finally {
       setSaving(false)
     }
   }
 
   return (
-    <div
-      className="fixed inset-0 z-[500] flex items-end sm:items-center justify-center p-4"
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="add-sale-title"
-      style={{
-        paddingBottom: 'calc(1rem + env(safe-area-inset-bottom))',
-        paddingTop: 'calc(1rem + env(safe-area-inset-top))',
-      }}
+    <Sheet
+      onClose={close}
+      dismissible={!saving}
+      labelledBy={titleId}
+      size="lg"
+      initialFocusRef={firstInputRef}
     >
-      {/* Backdrop */}
-      <motion.div
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        transition={{ duration: 0.2 }}
-        className="absolute inset-0 bg-black/40 backdrop-blur-[2px]"
-        onClick={() => { if (!saving) onClose() }}
-        aria-hidden
+      <SheetHeader
+        titleId={titleId}
+        title="Record sale"
+        subtitle={<>{rows.length} item{rows.length !== 1 ? 's' : ''} · <span className="font-semibold text-foreground">{formatDate(saleDateMs)}</span></>}
+        icon={<ShoppingBag size={18} />}
+        onClose={close}
+        closeDisabled={saving}
       />
 
-      {/* Modal */}
-      <motion.div
-        initial={{ opacity: 0, y: 40, scale: 0.97 }}
-        animate={{ opacity: 1, y: 0, scale: 1 }}
-        transition={{ duration: 0.3, ease: [0.23, 1, 0.32, 1] }}
-        className="relative w-full max-w-lg"
-      >
-        <div
-          className="relative h-full bg-card border border-border/60 rounded-3xl max-h-[92dvh] flex flex-col overflow-hidden"
-          style={{
-            boxShadow: `
-              0 2px 4px rgba(0,0,0,0.02),
-              0 8px 20px rgba(0,0,0,0.06),
-              0 24px 60px rgba(0,0,0,0.08)
-            `,
-          }}
-        >
-          {/* Header */}
-          <div className="flex items-center gap-3 px-5 pt-5 pb-4 shrink-0">
-            <div className="w-10 h-10 rounded-2xl bg-primary/10 flex items-center justify-center shrink-0">
-              <ShoppingBag size={18} className="text-primary" strokeWidth={1.8} />
-            </div>
-            <div className="flex-1 min-w-0">
-              <h2 id="add-sale-title" className="text-base font-bold text-foreground tracking-tight">
-                Record Sales
-              </h2>
-              <p className="text-xs text-muted-foreground mt-0.5">
-                {rows.length} item{rows.length !== 1 ? 's' : ''}
-                {total > 0 && <> · <span className="text-primary font-semibold">{formatCurrency(total)}</span></>}
-              </p>
-            </div>
-            <button
-              onClick={() => { if (!saving) onClose() }}
-              aria-label="Close"
-              disabled={saving}
-              className="p-2 rounded-xl text-muted-foreground/60 hover:text-foreground hover:bg-muted/60 active:scale-95 transition-all disabled:opacity-40"
+      <form ref={formRef} onSubmit={handleSubmit} className="flex flex-col flex-1 min-h-0" noValidate>
+        <SheetBody className="flex flex-col gap-4">
+          {topError && (
+            <motion.div
+              initial={{ opacity: 0, y: -8 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="flex items-start gap-2.5 text-[15px] font-medium text-negative bg-negative/8 border border-negative/25 rounded-2xl px-4 py-3"
+              role="alert"
             >
-              <X size={18} strokeWidth={2} />
+              <AlertCircle size={18} className="shrink-0 mt-0.5" />
+              {topError}
+            </motion.div>
+          )}
+
+          {rows.map((row, idx) => (
+            <SaleRowInput
+              key={row.id}
+              row={row}
+              index={idx}
+              showIndex={rows.length > 1}
+              errors={errors[row.id]}
+              categories={categories ?? []}
+              suggestions={suggestSaleProducts(history.products, row.productName)}
+              canRemove={rows.length > 1}
+              disabled={saving}
+              firstInputRef={idx === 0 ? firstInputRef : undefined}
+              onChange={updateRow}
+              onFill={fillRow}
+              onForget={forgetSuggestion}
+              onRemove={() => removeRow(row.id)}
+            />
+          ))}
+
+          {rows.length < MAX_SALE_ITEMS ? (
+            <button
+              type="button"
+              onClick={addRow}
+              disabled={saving}
+              className={cn(
+                'flex items-center justify-center gap-2 min-h-12 rounded-2xl border-2 border-dashed border-primary/35',
+                'text-base font-semibold text-primary hover:bg-primary/5 active:scale-[0.97] transition-all',
+                'disabled:opacity-50',
+              )}
+            >
+              <Plus size={18} strokeWidth={2.5} />
+              Add another item
+            </button>
+          ) : (
+            <p className="text-sm text-muted-foreground text-center">
+              You can add up to {MAX_SALE_ITEMS} items at once.
+            </p>
+          )}
+
+          <DateField
+            label="Sale date"
+            value={saleDateMs}
+            onChange={(ms) => setSaleDateMs(clampSaleDateToTodayMs(ms))}
+            disabled={saving}
+          />
+        </SheetBody>
+
+        <SheetFooter>
+          <div className="flex items-baseline justify-between gap-3 mb-3">
+            <span className="text-sm font-semibold text-muted-foreground">Total</span>
+            <span className="text-2xl font-bold text-foreground tabular tracking-tight" aria-live="polite">
+              {formatCurrency(total)}
+            </span>
+          </div>
+          <div className="flex gap-3">
+            <button type="button" onClick={close} disabled={saving} className={cn(btnSecondary, 'flex-1')}>
+              Cancel
+            </button>
+            <button type="submit" disabled={saving} className={cn(btnPrimary, 'flex-2')}>
+              {saving
+                ? <><Loader2 size={18} className="animate-[spin_1s_linear_infinite]" /> Saving…</>
+                : <><Check size={18} /> {rows.length > 1 ? 'Save sales' : 'Save sale'}</>}
             </button>
           </div>
-
-          {/* Divider */}
-          <div className="h-px bg-border/50 mx-5" />
-
-          <form onSubmit={handleSubmit} className="flex flex-col flex-1 min-h-0">
-            {/* Scrollable rows */}
-            <div ref={scrollContainerRef} className="overflow-y-auto px-4 py-4 flex flex-col gap-3 flex-1 overscroll-contain">
-              {/* Sale date (applies to all line items) */}
-              <div className="flex items-center gap-2 px-1">
-                <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider shrink-0">
-                  Sale date
-                </span>
-                <div className="relative flex-1 min-w-0 flex items-center">
-                  <input
-                    ref={saleDateInputRef}
-                    type="date"
-                    value={toDateInputValue(saleDateMs)}
-                    max={toDateInputValue(maxSaleDateMs())}
-                    onChange={(e) => setSaleDateMs(parseSaleDateInputClamped(e.target.value))}
-                    disabled={saving}
-                    aria-label="Sale date"
-                    className={cn(
-                      'w-full h-10 pl-3 pr-11 rounded-xl border bg-card text-sm font-medium text-foreground',
-                      'focus:outline-none focus:ring-2 focus:ring-ring/50 focus:border-transparent transition-all',
-                      'disabled:opacity-50 appearance-none',
-                      '[&::-webkit-calendar-picker-indicator]:hidden',
-                    )}
-                  />
-                  <button
-                    type="button"
-                    disabled={saving}
-                    aria-label="Open calendar"
-                    onClick={() => {
-                      const el = saleDateInputRef.current
-                      if (!el) return
-                      if (typeof el.showPicker === 'function') void el.showPicker()
-                      else el.focus()
-                    }}
-                    className={cn(
-                      'absolute right-1.5 top-1/2 -translate-y-1/2 p-1.5 rounded-lg',
-                      'text-muted-foreground hover:text-foreground hover:bg-muted/60',
-                      'active:scale-[0.97] transition-all disabled:opacity-40',
-                    )}
-                  >
-                    <Calendar size={18} strokeWidth={1.8} />
-                  </button>
-                </div>
-              </div>
-
-              {/* Top-level error */}
-              {topError && (
-                <motion.div
-                  initial={{ opacity: 0, y: -8 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  className="flex items-center gap-2 text-sm text-destructive bg-destructive/8 border border-destructive/20 rounded-2xl px-4 py-3"
-                  role="alert"
-                >
-                  <AlertCircle size={16} className="shrink-0" />
-                  {topError}
-                </motion.div>
-              )}
-
-              {/* Sale rows */}
-              {rows.map((row, idx) => (
-                <SaleRowInput
-                  key={row.id}
-                  row={row}
-                  index={idx}
-                  errors={errors[row.id]}
-                  categories={categories ?? []}
-                  isFirst={idx === 0}
-                  canRemove={rows.length > 1}
-                  firstInputRef={idx === 0 ? firstInputRef : undefined}
-                  onChange={updateRow}
-                  onRemove={() => removeRow(row.id)}
-                />
-              ))}
-
-              {/* Add another item */}
-              {rows.length < MAX_SALE_ITEMS && (
-                <button
-                  type="button"
-                  onClick={addRow}
-                  className={cn(
-                    'flex items-center gap-2 text-sm font-semibold text-primary',
-                    'hover:text-primary/80 active:scale-95 transition-all py-2 px-1',
-                    'w-fit rounded-xl',
-                  )}
-                >
-                  <div className="w-7 h-7 rounded-lg bg-primary/10 flex items-center justify-center">
-                    <Plus size={14} className="text-primary" strokeWidth={2.5} />
-                  </div>
-                  Add Another Item
-                </button>
-              )}
-            </div>
-
-            {/* Footer */}
-            <div
-              className="px-5 pt-4 shrink-0 flex items-center justify-between gap-4"
-              style={{
-                paddingBottom: `calc(1.25rem + env(safe-area-inset-bottom) + ${keyboardInset}px)`,
-                borderTop: '1px solid color-mix(in srgb, var(--border) 50%, transparent)',
-              }}
-            >
-              <div className="text-sm font-semibold text-foreground">
-                Total:{' '}
-                <span className="text-primary text-base font-bold tabular-nums">
-                  {formatCurrency(total)}
-                </span>
-              </div>
-              <div className="flex gap-2.5">
-                <Button
-                  type="button"
-                  variant="ghost"
-                  onClick={() => { if (!saving) onClose() }}
-                  disabled={saving}
-                  className="h-10 rounded-xl active:scale-[0.97] transition-transform"
-                >
-                  Cancel
-                </Button>
-                <Button
-                  type="submit"
-                  disabled={saving}
-                  className="h-10 rounded-xl bg-gradient-brand hover:opacity-90 text-white border-0 gap-2 active:scale-[0.97] transition-all"
-                >
-                  {saving
-                    ? <><Loader2 size={16} className="animate-spin" /> Saving…</>
-                    : <><Check size={16} /> Add Sales</>
-                  }
-                </Button>
-              </div>
-            </div>
-          </form>
-        </div>
-      </motion.div>
-    </div>
+        </SheetFooter>
+      </form>
+    </Sheet>
   )
 }
 
@@ -367,122 +329,168 @@ export default function AddSaleModal({ onClose }: AddSaleModalProps) {
 interface SaleRowInputProps {
   row:            SaleRow
   index:          number
+  showIndex:      boolean
   errors?:        RowErrors
   categories:     { _id: string; name: string; color: string }[]
-  isFirst:        boolean
+  suggestions:    SaleProductEntry[]
   canRemove:      boolean
+  disabled:       boolean
   firstInputRef?: React.RefObject<HTMLInputElement | null>
   onChange:       (id: string, field: keyof SaleRow, value: string) => void
+  onFill:         (id: string, entry: SaleProductEntry) => void
+  onForget:       (name: string) => void
   onRemove:       () => void
 }
 
 function SaleRowInput({
-  row, index, errors, categories, canRemove, firstInputRef, onChange, onRemove,
+  row, index, showIndex, errors, categories, suggestions, canRemove, disabled, firstInputRef,
+  onChange, onFill, onForget, onRemove,
 }: SaleRowInputProps) {
+  const uid = useId()
+  const [noteOpen, setNoteOpen] = useState(row.note !== '')
+  const amountRef = useRef<HTMLInputElement | null>(null)
+  const nameErrId = `${uid}-name-err`
+  const amountErrId = `${uid}-amount-err`
+
+  const setAmountRef = useCallback((el: HTMLInputElement | null) => {
+    amountRef.current = el
+    if (firstInputRef) firstInputRef.current = el
+  }, [firstInputRef])
+
+  const pick = (label: string) => {
+    const entry = suggestions.find((s) => s.name === label)
+    if (!entry) return
+    onFill(row.id, entry)
+    // Land on the amount with its text selected: confirm, or type over it.
+    requestAnimationFrame(() => {
+      const el = amountRef.current
+      if (!el) return
+      el.focus()
+      el.select()
+    })
+  }
+
   return (
     <motion.div
+      role="group"
+      aria-label={showIndex ? `Item ${index + 1}` : 'Sale item'}
       initial={{ opacity: 0, y: 10 }}
       animate={{ opacity: 1, y: 0 }}
-      transition={{
-        delay: index * 0.04,
-        duration: 0.25,
-        ease: [0.23, 1, 0.32, 1] as [number, number, number, number],
-      }}
-      className="flex flex-col gap-2.5 p-3.5 rounded-2xl border border-border/50 bg-muted/15 transition-all hover:bg-muted/25"
-      style={{
-        boxShadow: '0 1px 3px rgba(0,0,0,0.02), 0 0 0 1px rgba(0,0,0,0.03)',
-      }}
+      transition={{ duration: 0.2, ease: [0.22, 1, 0.36, 1] }}
+      className={cn(
+        'flex flex-col gap-3 min-w-0',
+        showIndex && 'p-3.5 rounded-3xl border border-border/70 bg-muted/25',
+      )}
     >
-      {/* Row header */}
-      <div className="flex items-center justify-between">
-        <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">
-          Item {index + 1}
-        </span>
-        {canRemove && (
-          <button
-            type="button"
-            onClick={onRemove}
-            aria-label="Remove item"
-            className="p-1.5 rounded-lg text-muted-foreground/50 hover:text-destructive hover:bg-destructive/8 active:scale-95 transition-all"
-          >
-            <X size={14} strokeWidth={2} />
-          </button>
+      {showIndex && (
+        <div className="flex items-center justify-between -mt-1 -mr-1">
+          <p className="text-sm font-bold text-foreground" aria-hidden>Item {index + 1}</p>
+          {canRemove && (
+            <button
+              type="button"
+              onClick={onRemove}
+              disabled={disabled}
+              aria-label={`Remove item ${index + 1}`}
+              className="w-11 h-11 rounded-full flex items-center justify-center text-muted-foreground hover:text-negative hover:bg-negative/10 active:scale-[0.97] transition-all"
+            >
+              <X size={18} strokeWidth={2} />
+            </button>
+          )}
+        </div>
+      )}
+
+      <div className="flex flex-col gap-1.5" data-row-amount={row.id}>
+        <label htmlFor={`${uid}-amount`} className={fieldLabel}>How much?</label>
+        <AmountInput
+          id={`${uid}-amount`}
+          inputRef={setAmountRef}
+          value={row.amount}
+          onChange={(v) => onChange(row.id, 'amount', v)}
+          invalid={Boolean(errors?.amount)}
+          disabled={disabled}
+          aria-describedby={errors?.amount ? amountErrId : undefined}
+        />
+        {errors?.amount && (
+          <p id={amountErrId} className={fieldError} role="alert">
+            <AlertCircle size={16} /> {errors.amount}
+          </p>
         )}
       </div>
 
-      {/* Product name + Amount */}
-      <div className="grid grid-cols-1 sm:grid-cols-[1fr_auto] gap-2">
-        <div className="flex flex-col gap-1">
-          <input
-            ref={firstInputRef as React.RefObject<HTMLInputElement> | undefined}
-            type="text"
-            value={row.productName}
-            onChange={(e) => onChange(row.id, 'productName', e.target.value)}
-            placeholder="Product name *"
-            autoComplete="off"
-            aria-label="Product name"
-            className={cn(
-              'h-11 px-3.5 rounded-xl border bg-card text-sm font-medium text-foreground',
-              'placeholder:text-muted-foreground/50',
-              'focus:outline-none focus:ring-2 focus:ring-ring/50 focus:border-transparent transition-all',
-              errors?.productName && 'border-destructive focus:ring-destructive/30',
-            )}
-          />
-          {errors?.productName && (
-            <p className="flex items-center gap-1.5 text-xs text-destructive font-medium" role="alert">
-              <AlertCircle size={11} /> {errors.productName}
-            </p>
-          )}
-        </div>
-
-        <div className="flex flex-col gap-1 w-full sm:w-28">
-          <input
-            type="number"
-            value={row.amount}
-            onChange={(e) => onChange(row.id, 'amount', e.target.value)}
-            placeholder="PKR *"
-            min="0"
-            step="1"
-            inputMode="numeric"
-            aria-label="Amount in PKR"
-            className={cn(
-              'h-11 px-3.5 rounded-xl border bg-card text-sm font-medium text-foreground',
-              'placeholder:text-muted-foreground/50',
-              'focus:outline-none focus:ring-2 focus:ring-ring/50 focus:border-transparent transition-all',
-              '[appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none',
-              errors?.amount && 'border-destructive focus:ring-destructive/30',
-            )}
-          />
-          {errors?.amount && (
-            <p className="flex items-center gap-1.5 text-xs text-destructive font-medium" role="alert">
-              <AlertCircle size={11} /> {errors.amount}
-            </p>
-          )}
-        </div>
+      <div className="flex flex-col gap-1.5">
+        <label htmlFor={`${uid}-name`} className={fieldLabel}>What did you sell?</label>
+        <input
+          id={`${uid}-name`}
+          data-row-name={row.id}
+          type="text"
+          value={row.productName}
+          onChange={(e) => onChange(row.id, 'productName', e.target.value)}
+          placeholder="e.g. Sugar 1kg, Chai"
+          maxLength={PRODUCT_NAME_MAX}
+          autoComplete="off"
+          enterKeyHint="next"
+          disabled={disabled}
+          aria-invalid={errors?.productName ? true : undefined}
+          aria-describedby={errors?.productName ? nameErrId : undefined}
+          className={cn(inputBase, errors?.productName && inputInvalid)}
+        />
+        <SuggestionChips
+          items={suggestions.map((s) => s.name)}
+          query={row.productName}
+          onPick={pick}
+          onRemove={onForget}
+          disabled={disabled}
+          aria-label={row.productName.trim() ? 'Matching items' : 'Recent items'}
+        />
+        {errors?.productName && (
+          <p id={nameErrId} className={fieldError} role="alert">
+            <AlertCircle size={16} /> {errors.productName}
+          </p>
+        )}
       </div>
 
-      {/* Category + Note */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-        <CategorySelect
-          categories={categories}
-          value={row.categoryId}
-          onChange={(v) => onChange(row.id, 'categoryId', v)}
-          aria-label="Category (optional)"
-        />
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <div className="flex flex-col gap-1.5">
+          <span id={`${uid}-cat`} className={fieldLabel}>
+            Category <span className="font-normal text-muted-foreground">(optional)</span>
+          </span>
+          <CategorySelect
+            categories={categories}
+            value={row.categoryId}
+            onChange={(v) => onChange(row.id, 'categoryId', v)}
+            aria-labelledby={`${uid}-cat`}
+            disabled={disabled}
+          />
+        </div>
 
-        <input
-          type="text"
-          value={row.note}
-          onChange={(e) => onChange(row.id, 'note', e.target.value)}
-          placeholder="Note (optional)"
-          maxLength={100}
-          aria-label="Note (optional)"
-          className={cn(
-            'h-11 px-3.5 rounded-xl border bg-card text-sm font-medium text-foreground',
-            'placeholder:text-muted-foreground/50',
-            'focus:outline-none focus:ring-2 focus:ring-ring/50 focus:border-transparent transition-all',
-          )}
-        />
+        {noteOpen ? (
+          <div className="flex flex-col gap-1.5">
+            <label htmlFor={`${uid}-note`} className={fieldLabel}>
+              Note <span className="font-normal text-muted-foreground">(optional)</span>
+            </label>
+            <input
+              id={`${uid}-note`}
+              type="text"
+              value={row.note}
+              onChange={(e) => onChange(row.id, 'note', e.target.value)}
+              placeholder="e.g. paid later, customer name"
+              maxLength={NOTE_MAX}
+              autoComplete="off"
+              disabled={disabled}
+              autoFocus={row.note === ''}
+              className={inputBase}
+            />
+          </div>
+        ) : (
+          <button
+            type="button"
+            onClick={() => setNoteOpen(true)}
+            disabled={disabled}
+            className="self-end flex items-center gap-2 min-h-12 px-3 rounded-2xl text-base font-semibold text-primary hover:bg-primary/5 active:scale-[0.97] transition-all w-fit"
+          >
+            <StickyNote size={18} /> Add a note
+          </button>
+        )}
       </div>
     </motion.div>
   )

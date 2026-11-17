@@ -25,7 +25,7 @@ export default function Footer() {
               href="https://github.com/ZubairBinShaukat"
               target="_blank"
               rel="noopener noreferrer"
-              className="group flex items-center gap-3 px-4 sm:px-5 py-2.5 sm:py-3 rounded-full transition-all duration-300 bg-black/5 dark:bg-white/5 hover:bg-black/10 dark:hover:bg-white/10"
+              className="group flex items-center gap-3 px-4 sm:px-5 py-2.5 sm:py-3 rounded-full transition-all duration-300 bg-muted/70 hover:bg-muted"
             >
               <div className="relative shrink-0">
                 <img
@@ -33,7 +33,7 @@ export default function Footer() {
                   alt="Zubair Bin Shaukat"
                   className="w-9 h-9 sm:w-11 sm:h-11 rounded-full object-cover ring-2 ring-primary transition-all duration-300 group-hover:scale-105"
                 />
-                <span className="absolute -bottom-0.5 -right-0.5 w-3 h-3 sm:w-3.5 sm:h-3.5 rounded-full border-2 border-background bg-emerald-500" />
+                <span className="absolute -bottom-0.5 -right-0.5 w-3 h-3 sm:w-3.5 sm:h-3.5 rounded-full border-2 border-background bg-success" />
               </div>
               <div className="text-left">
                 <p className="text-[9px] sm:text-[10px] text-muted-foreground font-semibold uppercase tracking-widest">
@@ -72,7 +72,7 @@ export default function Footer() {
               target="_blank"
               rel="noopener noreferrer"
               aria-label="View on GitHub"
-              className="flex items-center gap-2 px-4 py-2.5 rounded-full border border-border text-sm text-muted-foreground hover:text-foreground hover:border-foreground/30 hover:bg-black/5 dark:hover:bg-white/5 transition-all duration-300 active:scale-95"
+              className="flex items-center gap-2 px-4 py-2.5 rounded-full border border-border text-sm text-muted-foreground hover:text-foreground hover:border-foreground/30 hover:bg-muted transition-all duration-300 active:scale-95"
             >
               <svg
                 viewBox="0 0 24 24"

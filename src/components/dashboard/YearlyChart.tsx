@@ -9,71 +9,52 @@ import {
   ResponsiveContainer,
 } from 'recharts'
 import { Calendar } from 'lucide-react'
-import { CalendarRange, Loader2 } from 'lucide-react'
-import { useAvailableYears, usePaginatedYearSessions, useYearlyMonthlyTotals } from '@/hooks/useSales'
-import { usePaginatedYearExpenses } from '@/hooks/useExpenses'
+import { useYearlyMonthlyTotals } from '@/hooks/useSales'
 import { useCategories } from '@/hooks/useCategories'
-import { cn, formatCurrency } from '@/lib/utils'
+import { useDayFeed } from '@/hooks/useDayFeed'
+import { toDayGroups } from '@/lib/dayGroups'
+import { cn, endOfYear, startOfYear } from '@/lib/utils'
+import { compactTick, hiddenTick } from '@/lib/chart'
+import { useAmountVisibility, useFormatMoney } from '@/context/amountVisibility'
+import EmptyState from '@/components/shared/EmptyState'
 import SalesList from './SalesList'
+import LoadMoreButton from './LoadMoreButton'
+import DayFeedSkeleton from './DayFeedSkeleton'
+import ChartCard, { ChartTooltip, ListHeading } from './ChartCard'
 
 type MetricMode = 'net' | 'sales'
 
 const MONTH_LABELS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
-const PAGE_SIZE = 20
+const DAYS_PER_PAGE = 7
 
-function EmptyState() {
-  return (
-    <div className="flex flex-col items-center justify-center py-14 gap-4 text-center">
-      <Calendar className="text-muted-foreground/40" size={48} strokeWidth={1.5} />
-      <div>
-        <p className="font-semibold text-foreground">No yearly data yet</p>
-        <p className="text-sm text-muted-foreground mt-1">Record sales or expenses to see your yearly trend.</p>
-      </div>
-    </div>
-  )
+const METRICS: { id: MetricMode; label: string }[] = [
+  { id: 'net', label: 'Profit (sales − expenses)' },
+  { id: 'sales', label: 'Total sales' },
+]
+
+interface YearlyChartProps {
+  /** Selected calendar year (picked with the period switcher above the summary). */
+  year: number
 }
 
-function CustomTooltip({
-  active,
-  payload,
-  label,
-}: {
-  active?: boolean
-  payload?: Array<{ value: number }>
-  label?: string
-}) {
-  if (!active || !payload?.length) return null
-  return (
-    <div className="rounded-lg border border-border bg-card shadow-card-hover px-3 py-2 text-sm">
-      <p className="font-semibold text-foreground">{label}</p>
-      <p className="text-muted-foreground">{formatCurrency(payload[0].value)}</p>
-    </div>
-  )
-}
-
-export default function YearlyChart() {
-  const availableYears = useAvailableYears()
-  const fallbackYear = new Date().getFullYear()
-  const [selectedYear, setSelectedYear] = useState(fallbackYear)
+export default function YearlyChart({ year: selectedYearSafe }: YearlyChartProps) {
+  const money = useFormatMoney()
+  const { hidden: amountsHidden } = useAmountVisibility()
   const [metricMode, setMetricMode] = useState<MetricMode>('net')
 
-  const years = useMemo(() => {
-    if (!availableYears || availableYears.length === 0) return [fallbackYear]
-    return availableYears
-  }, [availableYears, fallbackYear])
-
-  const selectedYearSafe = years.includes(selectedYear) ? selectedYear : years[0]
   const yearlyTotals = useYearlyMonthlyTotals(selectedYearSafe)
   const categories = useCategories()
-  const sessionsResult = usePaginatedYearSessions(selectedYearSafe, PAGE_SIZE)
-  const expensesResult = usePaginatedYearExpenses(selectedYearSafe, PAGE_SIZE)
+  const yearStart = new Date(selectedYearSafe, 0, 1)
+  const feed = useDayFeed({ startDate: startOfYear(yearStart), endDate: endOfYear(yearStart) }, DAYS_PER_PAGE)
+  const days = useMemo(() => toDayGroups(feed.results), [feed.results])
+  const isCurrent = selectedYearSafe === new Date().getFullYear()
 
-  if (availableYears === undefined || yearlyTotals === undefined || categories === undefined) {
+  if (yearlyTotals === undefined || categories === undefined) {
     return (
-      <div className="flex flex-col gap-3 pt-2">
-        <div className="skeleton h-24 rounded-xl" />
-        <div className="skeleton h-60 rounded-xl" />
-        <div className="skeleton h-20 rounded-2xl" />
+      <div className="flex flex-col gap-3 pt-1">
+        <div className="skeleton h-28 rounded-3xl" />
+        <div className="skeleton h-64 rounded-3xl" />
+        <DayFeedSkeleton count={1} />
       </div>
     )
   }
@@ -82,55 +63,55 @@ export default function YearlyChart() {
     month: MONTH_LABELS[month.monthIndex],
     total: metricMode === 'net' ? month.netTotal : month.salesTotal,
   }))
+  const yearSum = data.reduce((s, d) => s + d.total, 0)
 
   const hasAnyData = yearlyTotals.some((month) => month.netTotal !== 0 || month.salesTotal !== 0)
-  if (!hasAnyData) return <EmptyState />
+  if (!hasAnyData) {
+    return (
+      <EmptyState
+        icon={<Calendar size={48} strokeWidth={1.5} />}
+        title={isCurrent ? 'No yearly data yet' : `No sales in ${selectedYearSafe}`}
+        message={isCurrent
+          ? 'Record sales or expenses and your year will show up here.'
+          : 'Nothing was recorded in this year.'}
+        showActions={isCurrent}
+      />
+    )
+  }
+
+  const metricLabel = METRICS.find((m) => m.id === metricMode)!.label
 
   return (
-    <div className="flex flex-col gap-4 pt-2">
-      <div className="flex flex-col gap-2">
-        <div className="grid grid-cols-2 gap-2 w-full rounded-xl bg-muted/50 border border-border/60 p-1">
-          <button
-            type="button"
-            onClick={() => setMetricMode('net')}
-            className={cn(
-              'w-full px-3 py-2 rounded-lg text-xs sm:text-sm font-semibold transition-all active:scale-95',
-              metricMode === 'net'
-                ? 'bg-background text-foreground shadow-sm'
-                : 'text-muted-foreground hover:text-foreground'
-            )}
-          >
-            Net (Sales - Expense)
-          </button>
-          <button
-            type="button"
-            onClick={() => setMetricMode('sales')}
-            className={cn(
-              'w-full px-3 py-2 rounded-lg text-xs sm:text-sm font-semibold transition-all active:scale-95',
-              metricMode === 'sales'
-                ? 'bg-background text-foreground shadow-sm'
-                : 'text-muted-foreground hover:text-foreground'
-            )}
-          >
-            Total Sales
-          </button>
-        </div>
-
-        <select
-          value={selectedYearSafe}
-          onChange={(e) => setSelectedYear(Number(e.target.value))}
-          className="w-full h-10 rounded-lg border border-border/70 bg-card px-3 text-sm font-medium text-foreground"
-          aria-label="Select year"
-        >
-          {years.map((year) => (
-            <option key={year} value={year}>
-              {year}
-            </option>
+    <div className="flex flex-col gap-5 pt-1">
+      <div className="flex flex-col gap-3">
+        {/* Metric segmented control */}
+        <div role="radiogroup" aria-label="What to show" className="grid grid-cols-2 gap-1 rounded-2xl bg-muted p-1">
+          {METRICS.map((m) => (
+            <button
+              key={m.id}
+              type="button"
+              role="radio"
+              aria-checked={metricMode === m.id}
+              onClick={() => setMetricMode(m.id)}
+              className={cn(
+                'min-h-11 px-2 rounded-xl text-sm font-semibold transition-all active:scale-[0.97]',
+                metricMode === m.id
+                  ? 'bg-card text-foreground shadow-card'
+                  : 'text-muted-foreground hover:text-foreground',
+              )}
+            >
+              {m.label}
+            </button>
           ))}
-        </select>
+        </div>
       </div>
 
-      <div className="bg-card border border-border rounded-2xl p-4">
+      <ChartCard
+        title={`${selectedYearSafe} by month`}
+        total={yearSum}
+        totalLabel={metricMode === 'net' ? 'Year profit' : 'Year sales'}
+        summary={`${metricLabel} in ${selectedYearSafe}: ${money(yearSum)}.`}
+      >
         <ResponsiveContainer width="100%" height={240}>
           <AreaChart data={data} margin={{ top: 4, right: 4, left: 0, bottom: 0 }}>
             <defs>
@@ -142,56 +123,38 @@ export default function YearlyChart() {
             <CartesianGrid vertical={false} stroke="hsl(var(--border))" strokeDasharray="3 3" />
             <XAxis
               dataKey="month"
-              tick={{ fill: 'hsl(var(--muted-foreground))', fontSize: 11 }}
+              tick={{ fill: 'hsl(var(--muted-foreground))', fontSize: 12 }}
               axisLine={false}
               tickLine={false}
+              minTickGap={8}
             />
             <YAxis
-              tick={{ fill: 'hsl(var(--muted-foreground))', fontSize: 11 }}
+              tick={{ fill: 'hsl(var(--muted-foreground))', fontSize: 12 }}
               axisLine={false}
               tickLine={false}
-              tickFormatter={(v: number) => `${(v / 1000).toFixed(0)}k`}
-              width={38}
+              tickFormatter={amountsHidden ? hiddenTick : compactTick}
+              width={40}
             />
-            <Tooltip content={<CustomTooltip />} />
+            <Tooltip content={<ChartTooltip />} />
             <Area
               type="monotone"
               dataKey="total"
               stroke="hsl(var(--primary))"
-              strokeWidth={2}
+              strokeWidth={2.5}
               fill="url(#yearlyAreaGrad)"
             />
           </AreaChart>
         </ResponsiveContainer>
-      </div>
+      </ChartCard>
 
       <div>
-        <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-3 flex items-center gap-2">
-          <CalendarRange size={14} />
-          {selectedYearSafe} Sales & Expenses
-        </p>
-        <SalesList
-          sessions={sessionsResult.results}
-          expenses={expensesResult.results}
-          categories={categories}
-          compact
-        />
-        {(sessionsResult.status !== 'Exhausted' || expensesResult.status !== 'Exhausted') && (
-          <div className="flex justify-center mt-4">
-            <button
-              type="button"
-              onClick={() => {
-                if (sessionsResult.status === 'CanLoadMore') sessionsResult.loadMore(PAGE_SIZE)
-                if (expensesResult.status === 'CanLoadMore') expensesResult.loadMore(PAGE_SIZE)
-              }}
-              disabled={sessionsResult.status === 'LoadingMore' || expensesResult.status === 'LoadingMore'}
-              className="inline-flex items-center gap-2 px-4 py-2 rounded-xl border border-border/70 bg-card text-sm font-semibold text-foreground hover:bg-muted/30 disabled:opacity-60 disabled:cursor-not-allowed active:scale-[0.97] transition-all"
-            >
-              {(sessionsResult.status === 'LoadingMore' || expensesResult.status === 'LoadingMore') && (
-                <Loader2 size={16} className="animate-spin" />
-              )}
-              <span>Show More</span>
-            </button>
+        <ListHeading>{selectedYearSafe} · sales and expenses</ListHeading>
+        {feed.status === 'LoadingFirstPage' ? (
+          <DayFeedSkeleton count={2} />
+        ) : (
+          <div className="flex flex-col gap-4">
+            <SalesList days={days} categories={categories} />
+            <LoadMoreButton status={feed.status} onLoadMore={() => feed.loadMore(DAYS_PER_PAGE)} />
           </div>
         )}
       </div>

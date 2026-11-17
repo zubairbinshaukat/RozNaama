@@ -1,209 +1,137 @@
-import { X, Package, DollarSign, CalendarDays, Tag, StickyNote } from 'lucide-react'
-import { motion, AnimatePresence } from 'framer-motion'
-import { Button } from '@/components/ui/button'
-import { formatCurrency, formatDate } from '@/lib/utils'
+import { useId } from 'react'
+import { Package, CalendarDays, Tag, StickyNote, Clock, Pencil, Trash2, ChevronRight } from 'lucide-react'
+import Sheet, { SheetBody, SheetFooter, SheetHeader } from '@/components/shared/Sheet'
+import { cn, formatDate, formatTime } from '@/lib/utils'
+import Amount from '@/components/shared/Amount'
+import { btnDangerGhost, btnOutline, btnSecondary } from '@/lib/ui'
 import type { SaleItem } from '@/hooks/useSales'
 import type { Category } from '@/hooks/useCategories'
+import OfflineEditNote from '@/components/shared/OfflineEditNote'
 
 interface SaleDetailModalProps {
   item:       SaleItem
   categories: Category[]
   onClose:    () => void
+  /** Omitted (read-only view) → no Edit button. */
+  onEdit?:    () => void
+  /** Omitted (read-only view) → no Delete button. */
+  onDelete?:  () => void
+  /** Opens the category's sales list. */
+  onOpenCategory?: (category: Category) => void
+  /** Edits need internet: show a short note above Edit / Delete. */
+  editOffline?: boolean
 }
 
-function hexToRgb(hex: string) {
-  const clean = hex.replace('#', '')
-  return {
-    r: parseInt(clean.slice(0, 2), 16),
-    g: parseInt(clean.slice(2, 4), 16),
-    b: parseInt(clean.slice(4, 6), 16),
-  }
-}
-
-export default function SaleDetailModal({ item, categories, onClose }: SaleDetailModalProps) {
+/** Tap a sale row → this sheet: full details plus Edit / Delete (2 taps + confirm). */
+export default function SaleDetailModal({
+  item,
+  categories,
+  onClose,
+  onEdit,
+  onDelete,
+  onOpenCategory,
+  editOffline = false,
+}: SaleDetailModalProps) {
+  const titleId = useId()
   const cat = item.categoryId ? categories.find((c) => c._id === item.categoryId) : undefined
-  const accent = cat?.color ?? '#6366f1'
-  const { r, g, b } = hexToRgb(accent)
+  const canEdit = onEdit !== undefined || onDelete !== undefined
 
   return (
-    <AnimatePresence>
-      <div
-        className="fixed inset-0 z-[520] flex items-end sm:items-center justify-center p-4"
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="sale-detail-title"
-      >
-        {/* Backdrop */}
-        <motion.div
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          exit={{ opacity: 0 }}
-          transition={{ duration: 0.2 }}
-          className="absolute inset-0 bg-black/40 backdrop-blur-[2px]"
-          onClick={onClose}
-          aria-hidden
-        />
+    <Sheet onClose={onClose} labelledBy={titleId} layer={520}>
+      <SheetHeader
+        titleId={titleId}
+        title={<span className="wrap-break-word">{item.productName}</span>}
+        subtitle="Sale"
+        icon={<Package size={18} />}
+        iconClassName={cat ? undefined : 'bg-muted text-muted-foreground'}
+        onClose={onClose}
+      />
+      <SheetBody className="flex flex-col gap-4">
+        <div className="rounded-3xl bg-muted/50 px-5 py-4">
+          <p className="text-sm font-semibold text-muted-foreground">Amount</p>
+          <p className="text-[2rem] font-bold text-foreground tabular tracking-tight leading-tight">
+            <Amount value={item.amount} />
+          </p>
+        </div>
 
-        {/* Modal panel */}
-        <motion.div
-          initial={{ opacity: 0, y: 40, scale: 0.97 }}
-          animate={{ opacity: 1, y: 0, scale: 1 }}
-          exit={{ opacity: 0, y: 20, scale: 0.97 }}
-          transition={{ duration: 0.3, ease: [0.23, 1, 0.32, 1] }}
-          className="relative w-full max-w-md bg-card border border-border/60 rounded-3xl max-h-[90dvh] flex flex-col overflow-hidden"
-          style={{
-            boxShadow: `
-              0 2px 4px rgba(0,0,0,0.02),
-              0 8px 20px rgba(0,0,0,0.06),
-              0 24px 60px rgba(${r},${g},${b},0.10)
-            `,
-          }}
-        >
-          {/* Accent gradient header band */}
-          <div
-            className="h-28 w-full relative shrink-0"
-            style={{
-              background: `linear-gradient(135deg, rgba(${r},${g},${b},0.14) 0%, rgba(${r},${g},${b},0.04) 100%)`,
-            }}
+        <dl className="flex flex-col divide-y divide-border/60 rounded-3xl border border-border/70">
+          <DetailRow icon={<CalendarDays size={18} />} label="Date">
+            {formatDate(item.saleDate)}
+          </DetailRow>
+          <DetailRow icon={<Clock size={18} />} label="Recorded at">
+            {formatTime(item.createdAt)}
+          </DetailRow>
+          <DetailRow icon={<Tag size={18} />} label="Category">
+            {cat ? (
+              <span className="inline-flex items-center gap-2">
+                <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: cat.color }} aria-hidden />
+                {cat.name}
+              </span>
+            ) : (
+              <span className="text-muted-foreground">No category</span>
+            )}
+          </DetailRow>
+          {item.note && (
+            <DetailRow icon={<StickyNote size={18} />} label="Note">
+              <span className="wrap-break-word">{item.note}</span>
+            </DetailRow>
+          )}
+        </dl>
+
+        {cat && onOpenCategory && (
+          <button
+            type="button"
+            onClick={() => onOpenCategory(cat)}
+            className="flex items-center gap-3 min-h-12 px-4 rounded-2xl text-left text-base font-semibold text-primary hover:bg-primary/5 active:scale-[0.97] transition-all"
           >
-            {/* Decorative circle */}
-            <div
-              className="absolute -bottom-6 left-5 w-14 h-14 rounded-2xl flex items-center justify-center border-4 border-card"
-              style={{
-                background: `linear-gradient(135deg, rgba(${r},${g},${b},0.18), rgba(${r},${g},${b},0.08))`,
-                boxShadow: `0 4px 12px rgba(${r},${g},${b},0.12)`,
-              }}
-            >
-              <Package size={22} style={{ color: accent }} strokeWidth={1.8} />
-            </div>
-
-            {/* Close button */}
-            <button
-              type="button"
-              onClick={onClose}
-              aria-label="Close"
-              className="absolute top-3 right-3 p-2 rounded-xl text-muted-foreground/60 hover:text-foreground hover:bg-black/5 active:scale-95 transition-all"
-            >
-              <X size={18} strokeWidth={2} />
-            </button>
+            <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: cat.color }} aria-hidden />
+            <span className="flex-1 min-w-0 truncate">See all {cat.name} sales</span>
+            <ChevronRight size={18} />
+          </button>
+        )}
+      </SheetBody>
+      <SheetFooter>
+        {canEdit && editOffline && <OfflineEditNote className="mb-3" />}
+        {canEdit ? (
+          <div className="flex gap-3">
+            {onDelete && (
+              <button type="button" onClick={onDelete} className={cn(btnDangerGhost, 'flex-1')}>
+                <Trash2 size={18} /> Delete
+              </button>
+            )}
+            {onEdit && (
+              <button type="button" onClick={onEdit} className={cn(btnOutline, 'flex-1')}>
+                <Pencil size={18} /> Edit
+              </button>
+            )}
           </div>
-
-          {/* Content */}
-          <div className="px-5 pt-10 pb-5 flex flex-col gap-5 overflow-y-auto">
-            {/* Product name as hero */}
-            <div>
-              <h2
-                id="sale-detail-title"
-                className="text-lg font-bold text-foreground tracking-tight leading-snug"
-              >
-                {item.productName}
-              </h2>
-              {cat && (
-                <div className="flex items-center gap-1.5 mt-2">
-                  <span
-                    className="w-2.5 h-2.5 rounded-full shrink-0"
-                    style={{ backgroundColor: cat.color }}
-                  />
-                  <span
-                    className="text-xs font-semibold"
-                    style={{ color: cat.color }}
-                  >
-                    {cat.name}
-                  </span>
-                </div>
-              )}
-            </div>
-
-            {/* Detail rows */}
-            <div className="flex flex-col gap-1">
-              <DetailRow
-                icon={<DollarSign size={16} />}
-                label="Amount"
-                accentRgb={`${r},${g},${b}`}
-              >
-                <span className="text-base font-bold text-foreground tabular-nums">
-                  {formatCurrency(item.amount)}
-                </span>
-              </DetailRow>
-
-              <DetailRow
-                icon={<CalendarDays size={16} />}
-                label="Date"
-                accentRgb={`${r},${g},${b}`}
-              >
-                <span className="text-sm font-medium text-foreground">
-                  {formatDate(item.saleDate)}
-                </span>
-              </DetailRow>
-
-              {cat && (
-                <DetailRow
-                  icon={<Tag size={16} />}
-                  label="Category"
-                  accentRgb={`${r},${g},${b}`}
-                >
-                  <span className="text-sm font-medium text-foreground">{cat.name}</span>
-                </DetailRow>
-              )}
-
-              {item.note && (
-                <DetailRow
-                  icon={<StickyNote size={16} />}
-                  label="Note"
-                  accentRgb={`${r},${g},${b}`}
-                >
-                  <span className="text-sm text-foreground leading-relaxed">{item.note}</span>
-                </DetailRow>
-              )}
-            </div>
-          </div>
-
-          {/* Footer */}
-          <div className="px-5 pb-5 pt-1 shrink-0">
-            <Button
-              type="button"
-              variant="ghost"
-              onClick={onClose}
-              className="w-full h-11 rounded-xl text-sm font-semibold active:scale-[0.97] transition-transform"
-            >
-              Close
-            </Button>
-          </div>
-        </motion.div>
-      </div>
-    </AnimatePresence>
+        ) : (
+          <button type="button" onClick={onClose} className={cn(btnSecondary, 'w-full')}>
+            Close
+          </button>
+        )}
+      </SheetFooter>
+    </Sheet>
   )
 }
 
-/* ─── detail row component ─── */
-
-function DetailRow({
+export function DetailRow({
   icon,
   label,
-  accentRgb,
   children,
 }: {
-  icon:       React.ReactNode
-  label:      string
-  accentRgb:  string
-  children:   React.ReactNode
+  icon:     React.ReactNode
+  label:    string
+  children: React.ReactNode
 }) {
   return (
-    <div className="flex items-start gap-3 py-3 px-3.5 rounded-2xl transition-colors hover:bg-muted/30">
-      <div
-        className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0 mt-0.5"
-        style={{
-          background: `rgba(${accentRgb}, 0.08)`,
-          color: `rgb(${accentRgb})`,
-        }}
-      >
+    <div className="flex items-start gap-3 px-4 py-3">
+      <div className="w-9 h-9 rounded-xl bg-primary/10 text-primary flex items-center justify-center shrink-0" aria-hidden>
         {icon}
       </div>
       <div className="flex flex-col gap-0.5 min-w-0">
-        <span className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider">
-          {label}
-        </span>
-        {children}
+        <dt className="text-[13px] font-semibold text-muted-foreground">{label}</dt>
+        <dd className="text-base font-medium text-foreground">{children}</dd>
       </div>
     </div>
   )

@@ -10,7 +10,7 @@ export default function LoadingScreen({ message = 'Loading…' }: LoadingScreenP
       {/* Brand mark */}
       <div className="flex flex-col items-center gap-3">
         <div className="w-14 h-14 rounded-2xl bg-gradient-brand flex items-center justify-center shadow-glow-md">
-          <TrendingUp className="text-white" size={28} strokeWidth={1.5} />
+          <TrendingUp className="text-brand-foreground" size={28} strokeWidth={1.5} />
         </div>
         <span className="text-xl font-bold text-foreground tracking-tight">RozNaama</span>
       </div>

@@ -13,7 +13,7 @@ export default function SignInPage() {
         {/* Logo + wordmark */}
         <Link to="/" className="flex items-center gap-2.5 font-bold text-xl group">
           <div className="w-10 h-10 rounded-xl bg-gradient-brand flex items-center justify-center shadow-glow-sm transition-transform group-hover:scale-105">
-            <TrendingUp className="text-white" size={20} />
+            <TrendingUp className="text-brand-foreground" size={20} />
           </div>
           <span className="text-foreground tracking-tight">RozNaama</span>
         </Link>
@@ -31,7 +31,7 @@ export default function SignInPage() {
               headerTitle:    'text-foreground font-bold',
               headerSubtitle: 'text-muted-foreground',
               socialButtonsBlockButton: 'border border-border bg-background hover:bg-muted text-foreground',
-              formButtonPrimary: 'bg-gradient-brand hover:opacity-90 text-white',
+              formButtonPrimary: 'bg-gradient-brand hover:brightness-105 text-brand-foreground',
               footerActionLink: 'text-primary hover:text-primary/80',
             },
           }}

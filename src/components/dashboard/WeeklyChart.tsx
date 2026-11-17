@@ -1,76 +1,88 @@
+import { useMemo } from 'react'
 import {
-  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
+  BarChart, Bar, Cell, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
 } from 'recharts'
 import { CalendarDays } from 'lucide-react'
-import { useWeeklyTotals, useWeekSessions } from '@/hooks/useSales'
+import { useWeeklyTotals } from '@/hooks/useSales'
 import { useCategories } from '@/hooks/useCategories'
-import { formatCurrency, startOfWeek, toLocalDateKey } from '@/lib/utils'
+import { useDayFeed } from '@/hooks/useDayFeed'
+import { toDayGroups } from '@/lib/dayGroups'
+import { addDays, toLocalDateKey } from '@/lib/utils'
+import { isCurrentPeriod, weekLabel, weekRange } from '@/lib/period'
+import EmptyState from '@/components/shared/EmptyState'
 import SalesList from './SalesList'
-import { useWeekExpenses } from '@/hooks/useExpenses'
+import LoadMoreButton from './LoadMoreButton'
+import DayFeedSkeleton from './DayFeedSkeleton'
+import ChartCard, { ChartTooltip, ListHeading } from './ChartCard'
+import { compactTick, hiddenTick } from '@/lib/chart'
+import { useAmountVisibility, useFormatMoney } from '@/context/amountVisibility'
 
 const DAY_ABBR = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
+const DAYS_PER_PAGE = 7
 
-function buildWeekFrame(totals: { date: string; total: number }[]): { day: string; total: number }[] {
-  const map    = new Map(totals.map((t) => [t.date, t.total]))
-  const monday = new Date(startOfWeek())
+function buildWeekFrame(
+  totals: { date: string; total: number }[],
+  monday: number,
+): { day: string; total: number; isToday: boolean }[] {
+  const map      = new Map(totals.map((t) => [t.date, t.total]))
+  const todayKey = toLocalDateKey(Date.now())
 
   return DAY_ABBR.map((day, i) => {
-    const d = new Date(monday)
-    d.setDate(monday.getDate() + i)
-    const key = toLocalDateKey(d.getTime())
-    return { day, total: map.get(key) ?? 0 }
+    const key = toLocalDateKey(addDays(monday, i))
+    return { day, total: map.get(key) ?? 0, isToday: key === todayKey }
   })
 }
 
-function CustomTooltip({ active, payload, label }: {
-  active?: boolean
-  payload?: Array<{ value: number }>
-  label?:  string
-}) {
-  if (!active || !payload?.length) return null
-  return (
-    <div className="rounded-lg border border-border bg-card shadow-card-hover px-3 py-2 text-sm">
-      <p className="font-semibold text-foreground">{label}</p>
-      <p className="text-muted-foreground">{formatCurrency(payload[0].value)}</p>
-    </div>
-  )
+interface WeeklyChartProps {
+  /** Monday (local midnight) of the selected week. */
+  week: number
 }
 
-function EmptyState() {
-  return (
-    <div className="flex flex-col items-center justify-center py-14 gap-4 text-center">
-      <CalendarDays className="text-muted-foreground/40" size={48} strokeWidth={1.5} />
-      <div>
-        <p className="font-semibold text-foreground">No sales this week</p>
-        <p className="text-sm text-muted-foreground mt-1">Start recording sales to see your weekly chart.</p>
-      </div>
-    </div>
-  )
-}
-
-export default function WeeklyChart() {
-  const totals     = useWeeklyTotals()
-  const sessions   = useWeekSessions()
+export default function WeeklyChart({ week }: WeeklyChartProps) {
+  const money = useFormatMoney()
+  const { hidden: amountsHidden } = useAmountVisibility()
+  const { start, end } = weekRange(week)
+  const totals     = useWeeklyTotals(start)
   const categories = useCategories()
-  const expenses   = useWeekExpenses()
+  const feed       = useDayFeed({ startDate: start, endDate: end }, DAYS_PER_PAGE)
+  const days       = useMemo(() => toDayGroups(feed.results), [feed.results])
+  const isCurrent  = isCurrentPeriod('week', start)
+  const label      = weekLabel(start)
 
-  if (totals === undefined || sessions === undefined || categories === undefined || expenses === undefined) {
+  if (totals === undefined || categories === undefined || feed.status === 'LoadingFirstPage') {
     return (
-      <div className="flex flex-col gap-3 pt-2">
-        <div className="skeleton h-60 rounded-xl" />
-        <div className="skeleton h-20 rounded-2xl" />
+      <div className="flex flex-col gap-3 pt-1">
+        <div className="skeleton h-64 rounded-3xl" />
+        <DayFeedSkeleton count={2} />
       </div>
     )
   }
 
-  const data    = buildWeekFrame(totals)
-  const hasAnyData = (sessions.length > 0) || (expenses.length > 0)
-  if (!hasAnyData) return <EmptyState />
+  if (days.length === 0 && feed.status === 'Exhausted') {
+    return (
+      <EmptyState
+        icon={<CalendarDays size={48} strokeWidth={1.5} />}
+        title={isCurrent ? 'No sales this week' : label === 'Last week' ? 'No sales last week' : `No sales in ${label}`}
+        message={isCurrent
+          ? 'Record a sale and your weekly chart will appear here.'
+          : 'Nothing was recorded in this week.'}
+        showActions={isCurrent}
+      />
+    )
+  }
+
+  const data = buildWeekFrame(totals, start)
+  const weekSum = data.reduce((s, d) => s + d.total, 0)
+  const best = data.reduce((a, b) => (b.total > a.total ? b : a), data[0]!)
 
   return (
-    <div className="flex flex-col gap-6 pt-2">
-      {/* Bar chart */}
-      <div className="bg-card border border-border rounded-2xl p-4">
+    <div className="flex flex-col gap-5 pt-1">
+      <ChartCard
+        title="Day by day"
+        total={weekSum}
+        totalLabel={label}
+        summary={`${label}: ${money(weekSum)}. Best day ${best.day} with ${money(best.total)}.`}
+      >
         <ResponsiveContainer width="100%" height={220}>
           <BarChart data={data} margin={{ top: 4, right: 4, left: 0, bottom: 0 }}>
             <CartesianGrid vertical={false} stroke="hsl(var(--border))" strokeDasharray="3 3" />
@@ -81,27 +93,32 @@ export default function WeeklyChart() {
               tickLine={false}
             />
             <YAxis
-              tick={{ fill: 'hsl(var(--muted-foreground))', fontSize: 11 }}
+              tick={{ fill: 'hsl(var(--muted-foreground))', fontSize: 12 }}
               axisLine={false}
               tickLine={false}
-              tickFormatter={(v: number) => `${(v / 1000).toFixed(0)}k`}
-              width={38}
+              tickFormatter={amountsHidden ? hiddenTick : compactTick}
+              width={40}
             />
-            <Tooltip content={<CustomTooltip />} cursor={{ fill: 'hsl(var(--muted) / 0.5)' }} />
-            <Bar dataKey="total" fill="hsl(var(--primary))" radius={[6, 6, 0, 0]} />
+            <Tooltip content={<ChartTooltip />} cursor={{ fill: 'hsl(var(--muted) / 0.6)' }} />
+            <Bar dataKey="total" radius={[8, 8, 0, 0]} maxBarSize={36}>
+              {data.map((d) => (
+                <Cell
+                  key={d.day}
+                  fill={d.isToday || !isCurrent ? 'hsl(var(--primary))' : 'hsl(var(--primary) / 0.45)'}
+                />
+              ))}
+            </Bar>
           </BarChart>
         </ResponsiveContainer>
-      </div>
+      </ChartCard>
 
-      {/* Detailed sales for the week */}
-      {sessions.length > 0 || expenses.length > 0 ? (
+      <div className="flex flex-col gap-4">
         <div>
-          <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-3">
-            This Week (Sales - Expenses)
-          </p>
-          <SalesList sessions={sessions} expenses={expenses} categories={categories} compact />
+          <ListHeading>{label} · sales and expenses</ListHeading>
+          <SalesList days={days} categories={categories} />
         </div>
-      ) : null}
+        <LoadMoreButton status={feed.status} onLoadMore={() => feed.loadMore(DAYS_PER_PAGE)} />
+      </div>
     </div>
   )
 }

@@ -1,69 +1,78 @@
+import { useMemo } from 'react'
 import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
 } from 'recharts'
 import { CalendarRange } from 'lucide-react'
-import { useMonthlyTotals, useMonthSessions } from '@/hooks/useSales'
+import { useMonthlyTotals } from '@/hooks/useSales'
 import { useCategories } from '@/hooks/useCategories'
-import { formatCurrency } from '@/lib/utils'
+import { useDayFeed } from '@/hooks/useDayFeed'
+import { toDayGroups } from '@/lib/dayGroups'
+import { isCurrentPeriod, monthLabel, monthRange } from '@/lib/period'
+import EmptyState from '@/components/shared/EmptyState'
 import SalesList from './SalesList'
-import { useMonthExpenses } from '@/hooks/useExpenses'
+import LoadMoreButton from './LoadMoreButton'
+import DayFeedSkeleton from './DayFeedSkeleton'
+import ChartCard, { ChartTooltip, ListHeading } from './ChartCard'
+import { compactTick, hiddenTick } from '@/lib/chart'
+import { useAmountVisibility, useFormatMoney } from '@/context/amountVisibility'
 
-function EmptyState() {
-  return (
-    <div className="flex flex-col items-center justify-center py-14 gap-4 text-center">
-      <CalendarRange className="text-muted-foreground/40" size={48} strokeWidth={1.5} />
-      <div>
-        <p className="font-semibold text-foreground">No sales this month</p>
-        <p className="text-sm text-muted-foreground mt-1">Record sales or add expenses to see your monthly trend.</p>
-      </div>
-    </div>
-  )
-}
-
-function CustomTooltip({ active, payload, label }: {
-  active?: boolean
-  payload?: Array<{ value: number }>
-  label?:  string
-}) {
-  if (!active || !payload?.length) return null
-  return (
-    <div className="rounded-lg border border-border bg-card shadow-card-hover px-3 py-2 text-sm">
-      <p className="font-semibold text-foreground">{label}</p>
-      <p className="text-muted-foreground">{formatCurrency(payload[0].value)}</p>
-    </div>
-  )
-}
+const DAYS_PER_PAGE = 7
 
 function shortDate(iso: string): string {
   return new Date(iso).toLocaleDateString('en-PK', { day: 'numeric', month: 'short' })
 }
 
-export default function MonthlyChart() {
-  const totals     = useMonthlyTotals()
-  const sessions   = useMonthSessions()
-  const categories = useCategories()
-  const expenses   = useMonthExpenses()
+interface MonthlyChartProps {
+  /** First day (local midnight) of the selected month. */
+  month: number
+}
 
-  if (totals === undefined || sessions === undefined || categories === undefined || expenses === undefined) {
+export default function MonthlyChart({ month }: MonthlyChartProps) {
+  const money = useFormatMoney()
+  const { hidden: amountsHidden } = useAmountVisibility()
+  const { start, end } = monthRange(month)
+  const totals     = useMonthlyTotals(start)
+  const categories = useCategories()
+  const feed       = useDayFeed({ startDate: start, endDate: end }, DAYS_PER_PAGE)
+  const days       = useMemo(() => toDayGroups(feed.results), [feed.results])
+  const isCurrent  = isCurrentPeriod('month', start)
+  const label      = monthLabel(start)
+
+  if (totals === undefined || categories === undefined || feed.status === 'LoadingFirstPage') {
     return (
-      <div className="flex flex-col gap-3 pt-2">
-        <div className="skeleton h-60 rounded-xl" />
-        <div className="skeleton h-20 rounded-2xl" />
+      <div className="flex flex-col gap-3 pt-1">
+        <div className="skeleton h-64 rounded-3xl" />
+        <DayFeedSkeleton count={2} />
       </div>
     )
   }
 
-  const hasAnyData = (sessions.length > 0) || (expenses.length > 0)
-  if (!hasAnyData) return <EmptyState />
+  if (days.length === 0 && feed.status === 'Exhausted') {
+    return (
+      <EmptyState
+        icon={<CalendarRange size={48} strokeWidth={1.5} />}
+        title={isCurrent ? 'No sales this month' : `No sales in ${label}`}
+        message={isCurrent
+          ? 'Record sales or add expenses to see how your month is going.'
+          : 'Nothing was recorded in this month.'}
+        showActions={isCurrent}
+      />
+    )
+  }
 
   const data = totals
     .map((t) => ({ day: shortDate(t.date), rawDate: t.date, total: t.total }))
     .sort((a, b) => a.rawDate.localeCompare(b.rawDate))
+  const monthSum = data.reduce((s, d) => s + d.total, 0)
 
   return (
-    <div className="flex flex-col gap-6 pt-2">
-      {/* Area chart */}
-      <div className="bg-card border border-border rounded-2xl p-4">
+    <div className="flex flex-col gap-5 pt-1">
+      <ChartCard
+        title={isCurrent ? 'Trend this month' : `Trend in ${label}`}
+        total={monthSum}
+        totalLabel={label}
+        summary={`${isCurrent ? 'This month so far' : label}: ${money(monthSum)} across ${data.length} days with entries.`}
+      >
         <ResponsiveContainer width="100%" height={220}>
           <AreaChart data={data} margin={{ top: 4, right: 4, left: 0, bottom: 0 }}>
             <defs>
@@ -75,39 +84,38 @@ export default function MonthlyChart() {
             <CartesianGrid vertical={false} stroke="hsl(var(--border))" strokeDasharray="3 3" />
             <XAxis
               dataKey="day"
-              tick={{ fill: 'hsl(var(--muted-foreground))', fontSize: 11 }}
+              tick={{ fill: 'hsl(var(--muted-foreground))', fontSize: 12 }}
               axisLine={false}
               tickLine={false}
               interval="preserveStartEnd"
+              minTickGap={16}
             />
             <YAxis
-              tick={{ fill: 'hsl(var(--muted-foreground))', fontSize: 11 }}
+              tick={{ fill: 'hsl(var(--muted-foreground))', fontSize: 12 }}
               axisLine={false}
               tickLine={false}
-              tickFormatter={(v: number) => `${(v / 1000).toFixed(0)}k`}
-              width={38}
+              tickFormatter={amountsHidden ? hiddenTick : compactTick}
+              width={40}
             />
-            <Tooltip content={<CustomTooltip />} />
+            <Tooltip content={<ChartTooltip />} />
             <Area
               type="monotone"
               dataKey="total"
               stroke="hsl(var(--primary))"
-              strokeWidth={2}
+              strokeWidth={2.5}
               fill="url(#areaGrad)"
             />
           </AreaChart>
         </ResponsiveContainer>
-      </div>
+      </ChartCard>
 
-      {/* Detailed sales for the month */}
-      {sessions.length > 0 || expenses.length > 0 ? (
+      <div className="flex flex-col gap-4">
         <div>
-          <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-3">
-            This Month (Sales - Expenses)
-          </p>
-          <SalesList sessions={sessions} expenses={expenses} categories={categories} compact />
+          <ListHeading>{label} · sales and expenses</ListHeading>
+          <SalesList days={days} categories={categories} />
         </div>
-      ) : null}
+        <LoadMoreButton status={feed.status} onLoadMore={() => feed.loadMore(DAYS_PER_PAGE)} />
+      </div>
     </div>
   )
 }
