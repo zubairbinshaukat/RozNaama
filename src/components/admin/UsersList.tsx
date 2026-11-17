@@ -5,7 +5,7 @@ import Amount from '@/components/shared/Amount'
 import EmptyState from '@/components/shared/EmptyState'
 import LoadMoreButton from '@/components/dashboard/LoadMoreButton'
 import { USERS_PAGE, useAdminUsers, type AdminUserRow } from '@/hooks/useAdmin'
-import { USER_SORTS, lastActiveLabel, sortLoadedUsers, type UserSortId } from '@/lib/admin'
+import { USER_SORTS, initialsOf, lastActiveLabel, sortLoadedUsers, type UserSortId } from '@/lib/admin'
 import { chip, chipActive, chipIdle, inputBase } from '@/lib/ui'
 import { cn } from '@/lib/utils'
 
@@ -20,8 +20,8 @@ function UserRow({ user }: { user: AdminUserRow }) {
         to={`/admin/users/${user._id}`}
         className="w-full flex items-center gap-3 text-left rounded-2xl border border-border/70 bg-card px-4 py-3 min-h-18 hover:bg-muted/50 active:scale-[0.97] transition-all duration-150"
       >
-        <span className="w-10 h-10 rounded-full bg-primary/10 text-primary flex items-center justify-center shrink-0 text-base font-bold" aria-hidden>
-          {user.name.trim().charAt(0).toUpperCase() || '?'}
+        <span className="w-10 h-10 rounded-full bg-primary/10 text-primary flex items-center justify-center shrink-0 text-sm font-bold" aria-hidden>
+          {initialsOf(user.name)}
         </span>
         <span className="flex-1 min-w-0">
           <span className="block text-base font-semibold text-foreground truncate">{user.name}</span>

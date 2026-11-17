@@ -202,6 +202,62 @@ export async function lastActivityAt(
   return candidates.length > 0 ? Math.max(...candidates) : null
 }
 
+/** First day (Monday) of the Monday→Sunday week containing `dayKey`, like the dashboard's "This week". */
+export function weekStartKey(dayKey: string): string {
+  const [y, m, d] = dayKey.split('-').map(Number)
+  const dow = new Date(Date.UTC(y ?? NaN, (m ?? NaN) - 1, d ?? NaN)).getUTCDay() // 0 = Sunday
+  return addDaysToKey(dayKey, -((dow + 6) % 7))
+}
+
+export type LatestRecord = {
+  kind:   'sale' | 'expense'
+  /** Sale: product name. Expense: its note, or "Expense". */
+  label:  string
+  amount: number
+  /** Entry date (ms) of the sale / expense. */
+  at:     number
+}
+
+const EXPENSE_FALLBACK_LABEL = 'Expense'
+
+/**
+ * The user's newest sale item or expense dated up to `nowMs` (entry date;
+ * a tie goes to the one created last), or null. Two index lookups.
+ */
+export async function latestRecord(
+  ctx: QueryCtx,
+  userId: Id<'users'>,
+  nowMs: number,
+): Promise<LatestRecord | null> {
+  const [sale, expense] = await Promise.all([
+    ctx.db
+      .query('sales')
+      .withIndex('by_userId_saleDate', (q) => q.eq('userId', userId).lte('saleDate', nowMs))
+      .order('desc')
+      .first(),
+    ctx.db
+      .query('expenses')
+      .withIndex('by_userId_expenseDate', (q) => q.eq('userId', userId).lte('expenseDate', nowMs))
+      .order('desc')
+      .first(),
+  ])
+  const saleRec: LatestRecord | null = sale
+    ? { kind: 'sale', label: sale.productName.trim() || 'Sale', amount: safe(sale.amount), at: sale.saleDate }
+    : null
+  const expenseRec: LatestRecord | null = expense
+    ? {
+        kind: 'expense',
+        label: expense.note?.trim() || EXPENSE_FALLBACK_LABEL,
+        amount: safe(expense.amount),
+        at: expense.expenseDate,
+      }
+    : null
+  if (!saleRec || !sale) return expenseRec
+  if (!expenseRec || !expense) return saleRec
+  if (saleRec.at !== expenseRec.at) return saleRec.at > expenseRec.at ? saleRec : expenseRec
+  return sale.createdAt >= expense.createdAt ? saleRec : expenseRec
+}
+
 /** Case-insensitive "contains" match on name or email (blank needle matches all). */
 export function matchesSearch(user: Pick<Doc<'users'>, 'name' | 'email'>, needle: string): boolean {
   if (needle.length === 0) return true

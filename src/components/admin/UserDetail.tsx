@@ -9,14 +9,15 @@ import PeriodSummary from '@/components/dashboard/PeriodSummary'
 import DailyTab from '@/components/dashboard/DailyTab'
 import DayFeedSkeleton from '@/components/dashboard/DayFeedSkeleton'
 import { SegmentedTabs } from '@/components/dashboard/ViewTabs'
-import { useViewAs, ViewAsOverride } from '@/context/ViewAsContext'
+import { ViewAsOverride } from '@/context/ViewAsContext'
 import { useAdminUser, type AdminUserRow } from '@/hooks/useAdmin'
-import { lastActiveLabel } from '@/lib/admin'
+import { initialsOf, lastActiveLabel } from '@/lib/admin'
 import { CURRENT_SELECTION, resolveSelection, selectPeriod, shortDayText, type PeriodSelection } from '@/lib/period'
 import { VIEW_PANEL_ID, type View } from '@/lib/views'
 import { btnOutline, btnPrimary } from '@/lib/ui'
 import { cn } from '@/lib/utils'
 import { useCardPrefs } from './cardPrefs'
+import { useImpersonate } from './useImpersonate'
 
 // Same chunks the normal dashboard uses (shared, not duplicated).
 const WeeklyChart  = lazy(() => import('@/components/dashboard/WeeklyChart'))
@@ -58,7 +59,7 @@ function Figures({ user }: { user: AdminUserRow }) {
 function Detail({ user }: { user: AdminUserRow }) {
   const navigate = useNavigate()
   const { showToast } = useToast()
-  const { setViewAs } = useViewAs()
+  const impersonate = useImpersonate()
   const { isHidden } = useCardPrefs()
   const [view, setView] = useState<View>('daily')
   const [selection, setSelection] = useState<PeriodSelection>(CURRENT_SELECTION)
@@ -72,18 +73,14 @@ function Detail({ user }: { user: AdminUserRow }) {
     navigate('/admin', { replace: true })
   }, [navigate, showToast])
 
-  const viewAsUser = () => {
-    setViewAs(user._id, user.name)
-    showToast(`Now viewing ${user.name}'s data (read-only)`, 'info')
-    navigate('/dashboard')
-  }
+  const viewAsUser = () => impersonate(user._id, user.name)
 
   return (
     <div className="flex flex-col gap-5">
       <section aria-label="User" className="rounded-3xl border border-border/70 bg-card shadow-card p-4 sm:p-5 flex flex-col gap-4">
         <div className="flex items-center gap-3 min-w-0">
           <span className="w-12 h-12 rounded-full bg-primary/12 text-primary flex items-center justify-center shrink-0 text-lg font-bold" aria-hidden>
-            {user.name.trim().charAt(0).toUpperCase() || '?'}
+            {initialsOf(user.name)}
           </span>
           <div className="min-w-0">
             <h1 className="text-xl font-logo font-bold text-foreground truncate">{user.name}</h1>
@@ -152,7 +149,7 @@ export default function UserDetail() {
   return (
     <div className="flex flex-col gap-4">
       <Link to="/admin" className="self-start inline-flex items-center gap-1.5 min-h-11 px-1 text-sm font-semibold text-primary active:scale-[0.97] transition-all">
-        <ArrowLeft size={16} aria-hidden /> All users
+        <ArrowLeft size={16} aria-hidden /> Admin home
       </Link>
       {user === undefined ? (
         <HeaderSkeleton />

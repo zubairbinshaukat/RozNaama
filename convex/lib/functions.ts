@@ -6,8 +6,8 @@
  *                   ctx.user: Doc<'users'> | null (null = not yet upserted).
  * - authedMutation: ctx.user: Doc<'users'> (throws USER_NOT_FOUND if missing,
  *                   FORBIDDEN if the email row belongs to another Clerk account).
- * - adminQuery:     throws FORBIDDEN unless the caller's verified JWT email is
- *                   listed in the ADMIN_EMAILS env var (model/users isAdminFromIdentity).
+ * - adminQuery:     throws FORBIDDEN unless the caller's JWT carries Clerk role
+ *                   "Admin" (model/users isAdminFromIdentity).
  * All of them throw UNAUTHORIZED when signed out and expose ctx.identity.
  */
 import { v } from 'convex/values'

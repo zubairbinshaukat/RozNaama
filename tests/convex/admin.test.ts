@@ -4,7 +4,7 @@ import type { FunctionReturnType, UserIdentity } from 'convex/server'
 import { api } from '../../convex/_generated/api'
 import type { Id } from '../../convex/_generated/dataModel'
 import { dateKeyInTimeZone } from '../../convex/lib/time'
-import { IDENTITIES, makeT, signIn, signInAndUpsert, stubAdminEmails, type TestT } from './setup'
+import { IDENTITIES, makeT, signIn, signInAndUpsert, type TestT } from './setup'
 import { KHI, fakeAllTimers, rebuildNow, seedExpense, seedSession } from './totalsFixtures'
 
 /** 2026-11-17 17:00 PKT. */
@@ -27,7 +27,6 @@ async function errorData(promise: Promise<unknown>): Promise<unknown> {
 
 beforeEach(() => {
   fakeAllTimers(NOW)
-  stubAdminEmails()
 })
 afterEach(() => {
   vi.useRealTimers()
@@ -157,6 +156,7 @@ describe('admin functions are admin-only', () => {
       as.query(api.admin.listUsers, LIST_ARGS),
       as.query(api.admin.listUsers, { ...LIST_ARGS, search: 'a', sort: 'name' }),
       as.query(api.admin.getUser, { userId: 'anything', timeZone: KHI }),
+      as.query(api.admin.watchSummaries, { userIds: [], timeZone: KHI }),
     ]
   }
 
@@ -165,17 +165,19 @@ describe('admin functions are admin-only', () => {
     for (const p of calls(t, null)) expect(await errorData(p)).toEqual({ code: 'UNAUTHORIZED', message: 'Unauthorized' })
   })
 
-  it('non-admin, Clerk-role "Admin" and unverified listed email → FORBIDDEN', async () => {
+  it('users without the Clerk "Admin" role → FORBIDDEN', async () => {
     const { t } = await seed()
-    for (const who of [IDENTITIES.A, IDENTITIES.CLERK_ROLE_ADMIN, IDENTITIES.ADMIN_UNVERIFIED, IDENTITIES.NOT_ADMIN_ROLE]) {
+    const lowercaseRole = { ...IDENTITIES.B, public_metadata: { role: 'admin' } } as Partial<UserIdentity>
+    for (const who of [IDENTITIES.A, IDENTITIES.NOT_ADMIN_ROLE, lowercaseRole]) {
       for (const p of calls(t, who)) expect(await errorData(p)).toEqual({ code: 'FORBIDDEN', message: 'Forbidden' })
     }
   })
 
-  it('ADMIN_EMAILS unset → nobody is admin', async () => {
+  it('every Clerk role claim shape is accepted', async () => {
     const { t } = await seed()
-    vi.unstubAllEnvs()
-    for (const p of calls(t, IDENTITIES.ADMIN)) expect(await errorData(p)).toEqual({ code: 'FORBIDDEN', message: 'Forbidden' })
+    for (const who of [IDENTITIES.ADMIN, IDENTITIES.ADMIN_CAMEL, IDENTITIES.ADMIN_TOP_LEVEL, IDENTITIES.ADMIN_NAMESPACED]) {
+      for (const p of calls(t, who)) await expect(p).resolves.toBeDefined()
+    }
   })
 })
 
@@ -321,5 +323,116 @@ describe('admin.listUsers', () => {
       timeZone: KHI, viewAsUserId: a,
     })
     expect(stats).toMatchObject({ todaySalesTotal: 100, todayExpenseTotal: 30, allTimeSalesTotal: 1719 })
+  })
+})
+
+describe('admin.watchSummaries', () => {
+  const WATCH = { timeZone: KHI }
+
+  /** Independent recompute of today / Monday-week / month sums (up to today) for one user. */
+  async function recomputeWatch(t: TestT, userId: Id<'users'>) {
+    return t.run(async (ctx) => {
+      const today = dateKeyInTimeZone(Date.now(), KHI)
+      const week = '2026-11-16' // Monday of the week of Tue 2026-11-17
+      const month = today.slice(0, 8) + '01'
+      const z = () => ({ sales: 0, expenses: 0 })
+      const out = { today: z(), week: z(), month: z() }
+      const add = (k: string, field: 'sales' | 'expenses', n: number) => {
+        if (k > today) return
+        if (k === today) out.today[field] += n
+        if (k >= week) out.week[field] += n
+        if (k >= month) out.month[field] += n
+      }
+      for (const s of await ctx.db.query('saleSessions').withIndex('by_userId_sessionDate', (q) => q.eq('userId', userId)).collect()) {
+        add(dateKeyInTimeZone(s.sessionDate, KHI), 'sales', s.totalAmount)
+      }
+      for (const e of await ctx.db.query('expenses').withIndex('by_userId_expenseDate', (q) => q.eq('userId', userId)).collect()) {
+        add(dateKeyInTimeZone(e.expenseDate, KHI), 'expenses', e.amount)
+      }
+      return out
+    })
+  }
+
+  it('numbers match a recompute for ready and not-ready users; rows follow the asked order', async () => {
+    const { t, a, b, c, d } = await seed()
+    const rows = await signIn(t, IDENTITIES.ADMIN).query(api.admin.watchSummaries, { ...WATCH, userIds: [d, a, b, c] })
+    expect(rows.map((r) => r.userId)).toEqual([d, a, b, c])
+    for (const r of rows) {
+      expect({ today: r.today, week: r.week, month: r.month }).toEqual(await recomputeWatch(t, r.userId))
+      expect(r.partial).toBe(false)
+    }
+    expect(rows[1]).toMatchObject({
+      name: 'Alice', email: 'a@example.com', lastActivityAt: pkt('11-17', 11),
+      today: { sales: 100, expenses: 30 }, week: { sales: 100, expenses: 30 }, month: { sales: 150, expenses: 30 },
+    })
+    expect(rows[2]).toMatchObject({ today: { sales: 0, expenses: 0 }, week: { sales: 0, expenses: 0 }, month: { sales: 40, expenses: 10 } })
+    expect(rows[3]).toMatchObject({ lastActivityAt: null, latest: null })
+
+    // Same numbers on the scan path.
+    vi.stubEnv('TOTALS_READS', 'off')
+    const scan = await signIn(t, IDENTITIES.ADMIN).query(api.admin.watchSummaries, { ...WATCH, userIds: [d, a, b, c] })
+    expect(scan).toEqual(rows)
+  })
+
+  it('a week that starts in the previous month is summed across the month boundary', async () => {
+    vi.setSystemTime(Date.parse('2026-12-02T12:00:00Z')) // Wed; week starts Mon 30 Nov
+    const t = makeT()
+    const { userId } = await signInAndUpsert(t, IDENTITIES.A)
+    await seedSession(t, userId, Date.parse('2026-11-29T10:00:00+05:00'), [{ amount: 7 }]) // Sunday before
+    await seedSession(t, userId, Date.parse('2026-11-30T10:00:00+05:00'), [{ amount: 20 }])
+    await seedSession(t, userId, Date.parse('2026-12-01T10:00:00+05:00'), [{ amount: 5 }])
+    for (const ready of [false, true]) {
+      if (ready) await rebuildNow(t, userId)
+      const [row] = await signIn(t, IDENTITIES.ADMIN).query(api.admin.watchSummaries, { ...WATCH, userIds: [userId] })
+      expect(row).toMatchObject({ week: { sales: 25, expenses: 0 }, month: { sales: 5, expenses: 0 }, today: { sales: 0, expenses: 0 } })
+    }
+  })
+
+  it('latest record: newest sale item or expense by entry date, future entries ignored', async () => {
+    const t = makeT()
+    const { as, userId } = await signInAndUpsert(t, IDENTITIES.A)
+    const admin = signIn(t, IDENTITIES.ADMIN)
+    const latest = async () => (await admin.query(api.admin.watchSummaries, { ...WATCH, userIds: [userId] }))[0]!.latest
+
+    expect(await latest()).toBeNull()
+    await t.run(async (ctx) => {
+      const sessionId = await ctx.db.insert('saleSessions', { userId, totalAmount: 160, itemCount: 1, sessionDate: pkt('11-17', 14), createdAt: 1 })
+      await ctx.db.insert('sales', { userId, sessionId, productName: 'Sugar 1kg', amount: 160, saleDate: pkt('11-17', 14), createdAt: 1 })
+      await ctx.db.insert('expenses', { userId, amount: 50, note: 'Tea', expenseDate: pkt('11-17', 9), createdAt: 2 })
+      // Future-dated (tomorrow): never the "latest".
+      await ctx.db.insert('expenses', { userId, amount: 999, note: 'Later', expenseDate: pkt('11-18', 9), createdAt: 3 })
+    })
+    expect(await latest()).toEqual({ kind: 'sale', label: 'Sugar 1kg', amount: 160, at: pkt('11-17', 14) })
+
+    await t.run((ctx) => ctx.db.insert('expenses', { userId, amount: 40, expenseDate: pkt('11-17', 15), createdAt: 4 }))
+    expect(await latest()).toEqual({ kind: 'expense', label: 'Expense', amount: 40, at: pkt('11-17', 15) })
+
+    // Recorded through the real mutation too.
+    await as.mutation(api.expenses.record, { amount: 75, note: 'Rent', expenseDate: pkt('11-17', 16) })
+    expect(await latest()).toMatchObject({ kind: 'expense', label: 'Rent', amount: 75 })
+  })
+
+  it('skips malformed, foreign-table, deleted and repeated ids; > 20 ids → VALIDATION', async () => {
+    const { t, a, b } = await seed()
+    const categoryId = await t.run((ctx) => ctx.db.insert('categories', { userId: a, name: 'F', color: '#6366F1', createdAt: 0 }))
+    await t.run((ctx) => ctx.db.delete('users', b))
+    const admin = signIn(t, IDENTITIES.ADMIN)
+    const rows = await admin.query(api.admin.watchSummaries, { ...WATCH, userIds: ['nope', categoryId, b, a, a] })
+    expect(rows.map((r) => r.userId)).toEqual([a])
+    expect(await admin.query(api.admin.watchSummaries, { ...WATCH, userIds: [] })).toEqual([])
+    expect(await errorData(admin.query(api.admin.watchSummaries, { ...WATCH, userIds: Array.from({ length: 21 }, () => a) })))
+      .toEqual({ code: 'VALIDATION', message: 'Choose at most 20 users' })
+  })
+
+  it('flags a not-ready user whose window exceeds the scan cap as partial', async () => {
+    const t = makeT()
+    const { userId } = await signInAndUpsert(t, IDENTITIES.A)
+    await t.run(async (ctx) => {
+      for (let i = 0; i < 260; i++) {
+        await ctx.db.insert('saleSessions', { userId, totalAmount: 1, itemCount: 1, sessionDate: pkt('11-17') + i, createdAt: 0 })
+      }
+    })
+    const [row] = await signIn(t, IDENTITIES.ADMIN).query(api.admin.watchSummaries, { ...WATCH, userIds: [userId] })
+    expect(row).toMatchObject({ partial: true, today: { sales: 250, expenses: 0 } })
   })
 })

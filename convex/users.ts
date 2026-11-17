@@ -29,9 +29,9 @@ export const upsertUser = mutation({
 })
 
 /**
- * Whether the signed-in caller is an admin (verified JWT email listed in the
- * ADMIN_EMAILS env var). Never throws: `{ isAdmin: false }` when signed out.
- * The frontend uses this instead of Clerk metadata; the server still checks
+ * Whether the signed-in caller is an admin (Clerk role "Admin" in the JWT
+ * claims, see model/users isAdminFromIdentity). Never throws: `{ isAdmin: false }` when signed out.
+ * The frontend uses this instead of reading Clerk metadata itself; the server still checks
  * every admin function itself.
  */
 export const getMyAccess = query({
@@ -43,7 +43,7 @@ export const getMyAccess = query({
   },
 })
 
-/** All users (admin only: verified email listed in ADMIN_EMAILS). */
+/** All users (admin only: Clerk role "Admin"). */
 export const listForAdmin = adminQuery({
   args: {},
   returns: v.array(adminUserRow),

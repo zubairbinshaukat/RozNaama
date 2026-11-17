@@ -1,14 +1,13 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { api } from '../../convex/_generated/api'
 import type { Id } from '../../convex/_generated/dataModel'
 import { zonedStartOfDayMs } from '../../convex/lib/time'
-import { IDENTITIES, makeT, signIn, signInAndUpsert, stubAdminEmails, type TestT } from './setup'
+import { IDENTITIES, makeT, signIn, signInAndUpsert, type TestT } from './setup'
 import { KHI, fakeAllTimers, readDays, rebuildNow, seedExpense, seedSession } from './totalsFixtures'
 import { DAY_FEED_DAY_HARD_CAP, DAY_FEED_MAX_BOUND_DAYS, DAY_FEED_ROW_CAP } from '../../convex/saleSessions'
 
 const NOW = '2026-11-17T12:00:00Z'
 
-beforeEach(() => stubAdminEmails())
 afterEach(() => {
   vi.useRealTimers()
   vi.unstubAllEnvs()

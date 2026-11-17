@@ -1,6 +1,6 @@
 /**
- * Admin dashboard reads (admin only: the caller's verified JWT email must be
- * listed in the ADMIN_EMAILS env var — see model/users isAdminFromIdentity).
+ * Admin dashboard reads (admin only: Clerk role "Admin" in the JWT claims —
+ * see model/users isAdminFromIdentity).
  * Read-only: nothing here writes.
  *
  * Both functions page over `users`, so no single call reads more than its
@@ -14,6 +14,8 @@
  * - `listUsers`: ≤ LIST_PAGE_MAX rows per page with today / month / all-time
  *   sales and last activity. Search scans at most LIST_SEARCH_MAX_ROWS users
  *   per page (a page may then come back short; `isDone` says whether more remain).
+ * - `watchSummaries`: ≤ WATCH_MAX_USERS chosen users (the admin's watchlist),
+ *   each ≤ ~45 reads when ready, else ≤ 2 × WATCH_SCAN_CAP rows + 4 lookups.
  *
  * The selected user's KPI cards / charts reuse the normal per-user queries
  * (saleSessions.getStats, getDailyTotals, getYearlyMonthlyTotals,
@@ -33,10 +35,13 @@ import {
   allTimeSales,
   dayBuckets,
   lastActivityAt,
+  latestRecord,
   matchesSearch,
   sumBuckets,
+  weekStartKey,
   type AdminWindows,
 } from './model/adminStats'
+import { validationError } from './lib/errors'
 import { totalsGate } from './model/totals'
 
 /** Max users per overview page (numItems is clamped to 1..this). */
@@ -49,6 +54,10 @@ export const LIST_PAGE_MAX = 25
 export const LIST_SCAN_CAP = 200
 /** Max users examined per listUsers page while searching. */
 export const LIST_SEARCH_MAX_ROWS = 1000
+/** Max users per watchSummaries call. */
+export const WATCH_MAX_USERS = 20
+/** Not-ready users: max sessions and max expenses read for the week / month window. */
+export const WATCH_SCAN_CAP = 250
 /** Longest search text used (longer input is cut). */
 export const SEARCH_MAX_LENGTH = 100
 
@@ -239,5 +248,89 @@ export const listUsers = adminQuery({
     const page = []
     for (const user of result.page) page.push(await listRowFor(ctx, user, w, nowMs))
     return { ...pageMeta(result), page }
+  },
+})
+
+// ─── watchSummaries ─────────────────────────────────────────────────────────
+
+const salesExpenses = v.object({ sales: v.number(), expenses: v.number() })
+
+const watchRow = v.object({
+  userId:         v.id('users'),
+  name:           v.string(),
+  email:          v.string(),
+  lastActivityAt: v.union(v.number(), v.null()),
+  /** Newest sale item or expense (by entry date, up to now). */
+  latest: v.union(
+    v.object({
+      kind:   v.union(v.literal('sale'), v.literal('expense')),
+      label:  v.string(),
+      amount: v.number(),
+      at:     v.number(),
+    }),
+    v.null(),
+  ),
+  /** Whole days in the request zone, up to and including today. */
+  today: salesExpenses,
+  /** Monday of this week → today. */
+  week:  salesExpenses,
+  /** 1st of this month → today. */
+  month: salesExpenses,
+  /** A scan cap was hit: week / month numbers are lower bounds. */
+  partial: v.boolean(),
+})
+
+/**
+ * Summary cards for the admin's watchlist: per chosen user the last activity,
+ * newest record and today / this week / this month sales + expenses. Ids that
+ * are malformed, from another table, deleted or repeated are skipped; rows
+ * come back in the order asked. More than WATCH_MAX_USERS ids → VALIDATION.
+ */
+export const watchSummaries = adminQuery({
+  args: {
+    userIds:  v.array(v.string()),
+    timeZone: v.string(),
+  },
+  returns: v.array(watchRow),
+  handler: async (ctx, args) => {
+    if (args.userIds.length > WATCH_MAX_USERS) {
+      throw validationError(`Choose at most ${WATCH_MAX_USERS} users`)
+    }
+    const tz = normalizeTimeZone(args.timeZone, DEFAULT_TIME_ZONE)
+    const nowMs = Date.now()
+    const w = adminWindows(nowMs, tz)
+    const weekKey = weekStartKey(w.todayKey)
+    const lowKey = weekKey < w.monthStartKey ? weekKey : w.monthStartKey
+
+    const seen = new Set<string>()
+    const rows = []
+    for (const raw of args.userIds) {
+      const id = ctx.db.normalizeId('users', raw)
+      if (id === null || seen.has(id)) continue
+      seen.add(id)
+      const user = await ctx.db.get('users', id)
+      if (!user) continue
+      const [b, latest, last] = await Promise.all([
+        dayBuckets(ctx, id, tz, lowKey, w.todayKey, WATCH_SCAN_CAP),
+        latestRecord(ctx, id, nowMs),
+        lastActivityAt(ctx, id, nowMs),
+      ])
+      const pick = (low: string) => {
+        const s = sumBuckets(b.days, low, w.todayKey)
+        return { sales: s.sales, expenses: s.expenses }
+      }
+      rows.push({
+        userId:         id,
+        name:           user.name,
+        email:          user.email,
+        lastActivityAt: last,
+        latest,
+        today:          pick(w.todayKey),
+        week:           pick(weekKey),
+        month:          pick(w.monthStartKey),
+        partial:        b.partial,
+      })
+    }
+    return rows
   },
 })

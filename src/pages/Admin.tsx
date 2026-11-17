@@ -1,6 +1,6 @@
 import { useCallback, useMemo, useState } from 'react'
-import { Link, Navigate, Route, Routes } from 'react-router-dom'
-import { ArrowLeft, ShieldCheck, SlidersHorizontal } from 'lucide-react'
+import { Link, Navigate, Route, Routes, useSearchParams } from 'react-router-dom'
+import { ArrowLeft, Eye, ShieldCheck, SlidersHorizontal, Users } from 'lucide-react'
 import ThemeSwitcher from '@/components/shared/ThemeSwitcher'
 import { AmountVisibilityProvider, AmountVisibilityToggle } from '@/components/shared/Amount'
 import QueryErrorBoundary from '@/components/shared/QueryErrorBoundary'
@@ -8,24 +8,63 @@ import OverviewCards from '@/components/admin/OverviewCards'
 import UsersList from '@/components/admin/UsersList'
 import UserDetail from '@/components/admin/UserDetail'
 import CustomizeSheet from '@/components/admin/CustomizeSheet'
+import Watchlist from '@/components/admin/Watchlist'
+import { cn } from '@/lib/utils'
 import { CardPrefsContext, type CardPrefs } from '@/components/admin/cardPrefs'
 import { readHiddenCards, writeHiddenCards, type AdminCardId } from '@/lib/admin'
 
+const HOME_TABS = [
+  { id: 'watch', label: 'Watchlist', icon: <Eye size={16} aria-hidden /> },
+  { id: 'all',   label: 'All users', icon: <Users size={16} aria-hidden /> },
+] as const
+
 function AdminHome() {
+  // In the URL so "back" from a user's page returns to the same tab.
+  const [params, setParams] = useSearchParams()
+  const tab = params.get('tab') === 'all' ? 'all' : 'watch'
+
   return (
-    <div className="flex flex-col gap-6">
-      <section aria-labelledby="admin-overview-heading" className="flex flex-col gap-3">
-        <h1 id="admin-overview-heading" className="text-xl sm:text-2xl font-logo font-bold text-foreground">Platform overview</h1>
+    <div className="flex flex-col gap-5">
+      <section aria-labelledby="admin-overview-heading" className="flex flex-col gap-2">
+        <h1 id="admin-overview-heading" className="text-sm font-semibold text-muted-foreground px-1">Platform today</h1>
         <QueryErrorBoundary fallbackMessage="Couldn't load the overview">
           <OverviewCards />
         </QueryErrorBoundary>
       </section>
-      <section aria-labelledby="admin-users-heading" className="flex flex-col gap-3">
-        <h2 id="admin-users-heading" className="text-lg font-bold text-foreground">Users</h2>
-        <QueryErrorBoundary fallbackMessage="Couldn't load users">
-          <UsersList />
-        </QueryErrorBoundary>
-      </section>
+
+      <div role="tablist" aria-label="Admin home" className="grid grid-cols-2 gap-1 p-1 rounded-2xl bg-muted/70 sm:max-w-sm">
+        {HOME_TABS.map((t) => (
+          <button
+            key={t.id}
+            type="button"
+            role="tab"
+            id={`admin-tab-${t.id}`}
+            aria-selected={tab === t.id}
+            aria-controls="admin-home-panel"
+            onClick={() => setParams(t.id === 'all' ? { tab: 'all' } : {}, { replace: true })}
+            className={cn(
+              'min-h-11 rounded-xl flex items-center justify-center gap-1.5 text-sm font-semibold active:scale-[0.97] transition-all',
+              tab === t.id ? 'bg-card text-foreground shadow-card' : 'text-muted-foreground hover:text-foreground',
+            )}
+          >
+            {t.icon} {t.label}
+          </button>
+        ))}
+      </div>
+
+      <div id="admin-home-panel" role="tabpanel" aria-labelledby={`admin-tab-${tab}`}>
+        {tab === 'watch' ? (
+          <QueryErrorBoundary fallbackMessage="Couldn't load your watchlist">
+            <Watchlist />
+          </QueryErrorBoundary>
+        ) : (
+          <section aria-label="All users" className="flex flex-col gap-3">
+            <QueryErrorBoundary fallbackMessage="Couldn't load users">
+              <UsersList />
+            </QueryErrorBoundary>
+          </section>
+        )}
+      </div>
     </div>
   )
 }

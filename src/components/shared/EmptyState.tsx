@@ -13,6 +13,8 @@ interface EmptyStateProps {
   readOnlyMessage?: string
   /** Offer "Record a sale" / "Add expense" buttons when the dashboard provides them. */
   showActions?: boolean
+  /** Custom call to action (e.g. admin pages), shown instead of the dashboard buttons. */
+  action?: ReactNode
   className?: string
 }
 
@@ -23,6 +25,7 @@ export default function EmptyState({
   message,
   readOnlyMessage = 'Nothing has been recorded here yet.',
   showActions = true,
+  action,
   className,
 }: EmptyStateProps) {
   const actions = useDashboardActions()
@@ -43,7 +46,8 @@ export default function EmptyState({
         <p className="text-lg font-bold text-foreground tracking-tight">{title}</p>
         <p className="text-[15px] text-muted-foreground leading-relaxed">{readOnly ? readOnlyMessage : message}</p>
       </div>
-      {canAct && (
+      {action}
+      {!action && canAct && (
         <div className="flex flex-col sm:flex-row gap-2.5 w-full max-w-xs sm:max-w-sm">
           <button type="button" onClick={actions.openAddSale} className={cn(btnPrimary, 'flex-1')}>
             <Plus size={18} /> Record a sale

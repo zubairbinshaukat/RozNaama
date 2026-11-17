@@ -3,7 +3,7 @@ import { ConvexError } from 'convex/values'
 import { api } from '../../convex/_generated/api'
 import type { Id } from '../../convex/_generated/dataModel'
 import { MAX_SALE_ITEMS } from '../../convex/lib/limits'
-import { IDENTITIES, freezeNow, makeT, signIn, signInAndUpsert, stubAdminEmails, type TestT } from './setup'
+import { IDENTITIES, freezeNow, makeT, signIn, signInAndUpsert, type TestT } from './setup'
 
 const NOW = '2026-11-17T12:00:00Z'
 const DAY = 24 * 60 * 60 * 1000
@@ -29,11 +29,9 @@ async function addCategory(t: TestT, userId: Id<'users'>, name = 'Food') {
 
 beforeEach(() => {
   freezeNow(NOW)
-  stubAdminEmails()
 })
 afterEach(() => {
   vi.useRealTimers()
-  vi.unstubAllEnvs()
 })
 
 describe('saleSessions.record', () => {

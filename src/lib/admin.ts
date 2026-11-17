@@ -64,6 +64,58 @@ export function lastActiveLabel(ms: number | null, now: number = Date.now()): st
   return shortDayText(ms, true)
 }
 
+/**
+ * "2:14 PM today", "Yesterday, 5:00 PM", else "Mon, 12 Mar" (with the year
+ * when it is not this year). Calendar days on this device.
+ */
+export function recordWhenLabel(ms: number, now: number = Date.now()): string {
+  const days = Math.round((startOfDay(new Date(now)) - startOfDay(new Date(ms))) / DAY_MS)
+  const time = new Date(ms).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })
+  if (days <= 0) return `${time} today`
+  if (days === 1) return `Yesterday, ${time}`
+  return shortDayText(ms, new Date(ms).getFullYear() !== new Date(now).getFullYear())
+}
+
+/** Up to two initials ("Ali Khan" → "AK", "sana" → "S", "" → "?"). */
+export function initialsOf(name: string): string {
+  const parts = name.trim().split(/\s+/).filter(Boolean)
+  const letters = parts.length > 1 ? [parts[0]!, parts[parts.length - 1]!] : parts
+  return letters.map((p) => p.charAt(0).toUpperCase()).join('') || '?'
+}
+
+/* ─── watchlist (users shown on the admin home) ─── */
+
+/** Server cap of admin.watchSummaries. */
+export const WATCHLIST_MAX = 20
+
+/**
+ * Per admin (Clerk user id), on this device. Could move to a server table
+ * later so it follows the admin across devices.
+ */
+export const watchlistKey = (clerkUserId: string) => `roznaama-admin-watchlist:${clerkUserId}`
+
+/** Saved user ids (strings, unique, at most WATCHLIST_MAX); [] when missing / corrupt. */
+export function readWatchlist(clerkUserId: string): string[] {
+  try {
+    const raw = localStorage.getItem(watchlistKey(clerkUserId))
+    if (!raw) return []
+    const parsed: unknown = JSON.parse(raw)
+    if (!Array.isArray(parsed)) return []
+    const ids = parsed.filter((x): x is string => typeof x === 'string' && x.length > 0 && x.length <= 64)
+    return [...new Set(ids)].slice(0, WATCHLIST_MAX)
+  } catch {
+    return []
+  }
+}
+
+export function writeWatchlist(clerkUserId: string, ids: readonly string[]): void {
+  try {
+    localStorage.setItem(watchlistKey(clerkUserId), JSON.stringify([...new Set(ids)].slice(0, WATCHLIST_MAX)))
+  } catch {
+    /* private mode / blocked storage: keep in memory only */
+  }
+}
+
 /** Client-side orders of the loaded rows; 'newest' / 'name' come from the server. */
 export const USER_SORTS = [
   { id: 'recent',  label: 'Recent activity', server: 'newest' },

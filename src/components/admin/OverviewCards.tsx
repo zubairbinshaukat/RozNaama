@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react'
-import { Activity, CalendarCheck, CalendarDays, Loader2, Sun, TrendingUp, UserPlus, Users, Wallet } from 'lucide-react'
+import { Activity, CalendarCheck, Loader2, Sun, TrendingUp, UserPlus, Users, Wallet } from 'lucide-react'
 import Amount from '@/components/shared/Amount'
 import { useAdminOverview } from '@/hooks/useAdmin'
 import type { AdminCardId } from '@/lib/admin'
@@ -15,33 +15,33 @@ interface Tile {
 
 function TileCard({ tile }: { tile: Tile }) {
   return (
-    <div className="rounded-3xl border border-border/70 bg-card shadow-card p-4 flex flex-col gap-2 min-h-28 min-w-0">
-      <div className="flex items-center gap-2 text-muted-foreground">
-        <span className="w-9 h-9 rounded-2xl bg-primary/10 text-primary flex items-center justify-center shrink-0" aria-hidden>
-          {tile.icon}
-        </span>
-        <span className="text-[13px] font-semibold leading-tight">{tile.label}</span>
+    <div className="snap-start shrink-0 w-38 sm:w-auto rounded-2xl border border-border/70 bg-card px-3 py-2.5 flex flex-col gap-1 min-w-0">
+      <div className="flex items-center gap-1.5 text-muted-foreground min-w-0">
+        <span className="text-primary shrink-0" aria-hidden>{tile.icon}</span>
+        <span className="text-[12px] font-semibold leading-tight truncate">{tile.label}</span>
       </div>
-      <p className="text-2xl font-bold text-foreground tracking-tight leading-tight wrap-break-word tabular">{tile.value}</p>
-      <p className="text-[13px] text-muted-foreground leading-snug">{tile.note}</p>
+      <p className="text-lg font-bold text-foreground tracking-tight leading-tight wrap-break-word tabular">{tile.value}</p>
+      <p className="text-[11px] text-muted-foreground leading-snug truncate">{tile.note}</p>
     </div>
   )
 }
 
+/** Mobile: one swipeable row. Wider screens: a grid that wraps. */
+const STRIP = 'flex gap-2 overflow-x-auto snap-x -mx-4 px-4 pb-1 sm:mx-0 sm:px-0 sm:grid sm:grid-cols-4 lg:grid-cols-7 sm:overflow-visible'
+
 function OverviewSkeleton() {
   return (
-    <div className="grid grid-cols-2 lg:grid-cols-4 gap-3" aria-hidden data-testid="overview-skeleton">
+    <div className={STRIP} aria-hidden data-testid="overview-skeleton">
       {Array.from({ length: 4 }).map((_, i) => (
-        <div key={i} className="rounded-3xl border border-border/70 bg-card p-4 flex flex-col gap-3 min-h-28">
-          <div className="skeleton h-9 w-24 rounded-2xl" />
-          <div className="skeleton h-7 w-20 rounded-xl" />
-          <div className="skeleton h-3 w-28 rounded-full" />
+        <div key={i} className="shrink-0 w-38 sm:w-auto rounded-2xl border border-border/70 bg-card px-3 py-2.5 flex flex-col gap-2">
+          <div className="skeleton h-3 w-20 rounded-full" />
+          <div className="skeleton h-5 w-16 rounded-lg" />
+          <div className="skeleton h-2.5 w-24 rounded-full" />
         </div>
       ))}
     </div>
   )
 }
-
 const pct = (n: number, of: number) => (of > 0 ? `${Math.round((n / of) * 100)}% of users` : 'No users yet')
 
 /** Platform KPI cards (admin.overview, all pages summed). Hidden cards come from the Customize sheet. */
@@ -53,20 +53,20 @@ export default function OverviewCards() {
 
   const o = overview
   const tiles: Tile[] = [
-    { id: 'users', label: 'Total users', icon: <Users size={24} />, value: o.users.toLocaleString('en-PK'),
+    { id: 'users', label: 'Total users', icon: <Users size={16} />, value: o.users.toLocaleString('en-PK'),
       note: `${o.newThisMonth} joined this month` },
-    { id: 'activeToday', label: 'Active today', icon: <Sun size={24} />, value: o.activeToday.toLocaleString('en-PK'),
+    { id: 'activeToday', label: 'Active today', icon: <Sun size={16} />, value: o.activeToday.toLocaleString('en-PK'),
       note: pct(o.activeToday, o.users) },
-    { id: 'active7d', label: 'Active, 7 days', icon: <Activity size={24} />, value: o.active7d.toLocaleString('en-PK'),
+    { id: 'active7d', label: 'Active, 7 days', icon: <Activity size={16} />, value: o.active7d.toLocaleString('en-PK'),
       note: pct(o.active7d, o.users) },
-    { id: 'active30d', label: 'Active, 30 days', icon: <CalendarCheck size={24} />, value: o.active30d.toLocaleString('en-PK'),
+    { id: 'active30d', label: 'Active, 30 days', icon: <CalendarCheck size={16} />, value: o.active30d.toLocaleString('en-PK'),
       note: pct(o.active30d, o.users) },
-    { id: 'todaySales', label: "Today's sales", icon: <Wallet size={24} />, value: <Amount value={o.todaySales} />,
+    { id: 'todaySales', label: "Today's sales", icon: <Wallet size={16} />, value: <Amount value={o.todaySales} />,
       note: <>Expenses <Amount value={o.todayExpenses} /></> },
-    { id: 'monthSales', label: "This month's sales", icon: <TrendingUp size={24} />, value: <Amount value={o.monthSales} />,
+    { id: 'monthSales', label: "This month's sales", icon: <TrendingUp size={16} />, value: <Amount value={o.monthSales} />,
       note: <>Expenses <Amount value={o.monthExpenses} /></> },
-    { id: 'newUsers', label: 'New this month', icon: <UserPlus size={24} />, value: o.newThisMonth.toLocaleString('en-PK'),
-      note: <span className="inline-flex items-center gap-1"><CalendarDays size={14} aria-hidden /> Signed up this month</span> },
+    { id: 'newUsers', label: 'New this month', icon: <UserPlus size={16} />, value: o.newThisMonth.toLocaleString('en-PK'),
+      note: 'Signed up this month' },
   ]
   const visible = tiles.filter((t) => !isHidden(t.id))
 
@@ -75,8 +75,8 @@ export default function OverviewCards() {
       {visible.length === 0 ? (
         <p className="text-[15px] text-muted-foreground px-1">All overview cards are hidden. Use Customize to show them.</p>
       ) : (
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-          {visible.map((t) => <TileCard key={t.id} tile={t} />)}
+        <div className={STRIP} role="list" aria-label="Platform overview">
+          {visible.map((t) => <div key={t.id} role="listitem" className="contents"><TileCard tile={t} /></div>)}
         </div>
       )}
       {counting && (

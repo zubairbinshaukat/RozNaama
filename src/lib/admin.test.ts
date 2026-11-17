@@ -1,5 +1,38 @@
 import { afterEach, describe, expect, it } from 'vitest'
-import { ADMIN_CARDS_KEY, lastActiveLabel, readHiddenCards, sortLoadedUsers, writeHiddenCards } from './admin'
+import {
+  ADMIN_CARDS_KEY, WATCHLIST_MAX, initialsOf, lastActiveLabel, readHiddenCards, readWatchlist, recordWhenLabel,
+  sortLoadedUsers, watchlistKey, writeHiddenCards, writeWatchlist,
+} from './admin'
+
+describe('recordWhenLabel / initialsOf', () => {
+  const now = Date.parse('2026-11-17T17:00:00+05:00')
+  it('says "2:14 PM today", "Yesterday, …", or the date', () => {
+    expect(recordWhenLabel(Date.parse('2026-11-17T14:14:00+05:00'), now)).toBe('2:14 PM today')
+    expect(recordWhenLabel(Date.parse('2026-11-16T09:05:00+05:00'), now)).toBe('Yesterday, 9:05 AM')
+    expect(recordWhenLabel(Date.parse('2026-11-10T09:05:00+05:00'), now)).toBe('Tue, 10 Nov')
+    expect(recordWhenLabel(Date.parse('2025-11-10T09:05:00+05:00'), now)).toBe('Mon, 10 Nov 2025')
+  })
+  it('makes up to two initials', () => {
+    expect(initialsOf('Ali Raza Khan')).toBe('AK')
+    expect(initialsOf('  sana ')).toBe('S')
+    expect(initialsOf('')).toBe('?')
+  })
+})
+
+describe('watchlist storage', () => {
+  it('is per Clerk user, de-duplicated, capped, and survives corrupt data', () => {
+    expect(readWatchlist('c1')).toEqual([])
+    writeWatchlist('c1', ['a', 'b', 'a'])
+    expect(readWatchlist('c1')).toEqual(['a', 'b'])
+    expect(readWatchlist('c2')).toEqual([])
+    writeWatchlist('c2', Array.from({ length: 30 }, (_, i) => `id${i}`))
+    expect(readWatchlist('c2')).toHaveLength(WATCHLIST_MAX)
+    localStorage.setItem(watchlistKey('c1'), JSON.stringify(['ok', 3, null, '']))
+    expect(readWatchlist('c1')).toEqual(['ok'])
+    localStorage.setItem(watchlistKey('c1'), '{bad')
+    expect(readWatchlist('c1')).toEqual([])
+  })
+})
 
 afterEach(() => localStorage.clear())
 

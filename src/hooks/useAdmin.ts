@@ -1,11 +1,14 @@
-import { useEffect, useMemo } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useAuth } from '@clerk/clerk-react'
 import { useQuery } from 'convex/react'
 import { usePaginatedQuery } from 'convex-helpers/react'
 import type { FunctionReturnType } from 'convex/server'
 import { api } from '../../convex/_generated/api'
 import { getClientTimeZone } from '@/lib/utils'
+import { readWatchlist, writeWatchlist } from '@/lib/admin'
 
 export type AdminUserRow = FunctionReturnType<typeof api.admin.listUsers>['page'][number]
+export type WatchSummary = FunctionReturnType<typeof api.admin.watchSummaries>[number]
 export type ServerUserSort = 'newest' | 'oldest' | 'name'
 
 /** Users per overview page (server max 40). */
@@ -83,4 +86,34 @@ export function useAdminUsers(search: string, sort: ServerUserSort) {
 /** One user's header row; undefined while loading, null when gone. */
 export function useAdminUser(userId: string): AdminUserRow | null | undefined {
   return useQuery(api.admin.getUser, { userId, timeZone: getClientTimeZone() })
+}
+
+export type Watchlist = {
+  ids: string[]
+  save: (ids: readonly string[]) => void
+}
+
+/** The signed-in admin's watchlist (localStorage, keyed by Clerk user id). */
+export function useWatchlist(): Watchlist {
+  const { userId } = useAuth()
+  const owner = userId ?? ''
+  const [state, setState] = useState(() => ({ owner, ids: owner ? readWatchlist(owner) : [] }))
+  // Another Clerk account on this device: load its own list.
+  if (state.owner !== owner) setState({ owner, ids: owner ? readWatchlist(owner) : [] })
+  const save = useCallback((ids: readonly string[]) => {
+    if (owner) writeWatchlist(owner, ids)
+    setState({ owner, ids: [...ids] })
+  }, [owner])
+  return { ids: state.owner === owner ? state.ids : [], save }
+}
+
+/** Watchlist cards (admin.watchSummaries); [] without a query when nothing is chosen. */
+export function useWatchSummaries(ids: readonly string[]): WatchSummary[] | undefined {
+  const key = ids.join(',')
+  const args = useMemo(
+    () => (key ? { userIds: key.split(','), timeZone: getClientTimeZone() } : 'skip' as const),
+    [key],
+  )
+  const rows = useQuery(api.admin.watchSummaries, args)
+  return key ? rows : []
 }

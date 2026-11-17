@@ -9,8 +9,8 @@ export type AdminAccess = {
 }
 
 /**
- * Admin flag from the server (`users.getMyAccess`: verified email listed in
- * the ADMIN_EMAILS env var). UI gating only — every admin query is checked
+ * Admin flag from the server (`users.getMyAccess`: Clerk role "Admin" in the
+ * JWT claims). UI gating only — every admin query is checked
  * on the server too. Skipped until Convex has the auth token, so a
  * signed-out first answer never flips the flag (and never clears a saved
  * view-as) while the token is still on its way.

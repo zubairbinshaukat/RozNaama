@@ -1,12 +1,9 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { describe, expect, it } from 'vitest'
 import { ConvexError, v } from 'convex/values'
 import { validate } from 'convex-helpers/validators'
 import { api } from '../../convex/_generated/api'
 import { categoryDoc } from '../../convex/lib/returnValidators'
-import { IDENTITIES, makeT, signIn, signInAndUpsert, stubAdminEmails, type TestT } from './setup'
-
-beforeEach(() => stubAdminEmails())
-afterEach(() => vi.unstubAllEnvs())
+import { IDENTITIES, makeT, signIn, signInAndUpsert, type TestT } from './setup'
 
 const listReturns = v.array(categoryDoc)
 const createReturns = v.id('categories')
