@@ -1,12 +1,16 @@
-import { describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { ConvexError } from 'convex/values'
 import { api } from '../../convex/_generated/api'
-import { IDENTITIES, makeT, signIn, signInAndUpsert } from './setup'
+import { IDENTITIES, makeT, signIn, signInAndUpsert, stubAdminEmails } from './setup'
+
+beforeEach(() => stubAdminEmails())
+afterEach(() => vi.unstubAllEnvs())
 
 describe('users.validateViewAsTarget', () => {
   it('returns { _id, name } for an admin and an existing user', async () => {
     const t = makeT()
     const { userId } = await signInAndUpsert(t, IDENTITIES.A)
-    for (const admin of [IDENTITIES.ADMIN, IDENTITIES.ADMIN_CAMEL, IDENTITIES.ADMIN_NAMESPACED]) {
+    for (const admin of [IDENTITIES.ADMIN, IDENTITIES.ADMIN_TWO]) {
       expect(await signIn(t, admin).query(api.users.validateViewAsTarget, { userId }))
         .toEqual({ _id: userId, name: 'Alice' })
     }
@@ -17,6 +21,8 @@ describe('users.validateViewAsTarget', () => {
     const { as, userId } = await signInAndUpsert(t, IDENTITIES.A)
     expect(await as.query(api.users.validateViewAsTarget, { userId })).toBeNull()
     expect(await signIn(t, IDENTITIES.NOT_ADMIN_ROLE).query(api.users.validateViewAsTarget, { userId })).toBeNull()
+    expect(await signIn(t, IDENTITIES.CLERK_ROLE_ADMIN).query(api.users.validateViewAsTarget, { userId })).toBeNull()
+    expect(await signIn(t, IDENTITIES.ADMIN_UNVERIFIED).query(api.users.validateViewAsTarget, { userId })).toBeNull()
   })
 
   it('returns null for malformed ids and ids from another table', async () => {
@@ -43,5 +49,36 @@ describe('users.validateViewAsTarget', () => {
     const { userId } = await signInAndUpsert(t, IDENTITIES.A)
     expect(await t.query(api.users.validateViewAsTarget, { userId })).toBeNull()
     expect(await t.query(api.users.validateViewAsTarget, { userId: 'garbage' })).toBeNull()
+  })
+})
+
+describe('view-as data reads use ADMIN_EMAILS', () => {
+  async function errorData(promise: Promise<unknown>): Promise<unknown> {
+    try {
+      await promise
+    } catch (err) {
+      expect(err).toBeInstanceOf(ConvexError)
+      return (err as ConvexError<Record<string, string>>).data
+    }
+    throw new Error('expected promise to reject')
+  }
+
+  it('listed admins read another user; Clerk-role, unverified and unlisted callers get FORBIDDEN', async () => {
+    const t = makeT()
+    const { as, userId } = await signInAndUpsert(t, IDENTITIES.A)
+    await as.mutation(api.categories.create, { name: 'Food', color: '#6366F1' })
+
+    const viaAdmin = await signIn(t, IDENTITIES.ADMIN_TWO).query(api.categories.list, { viewAsUserId: userId })
+    expect(viaAdmin.map((c) => c.name)).toEqual(['Food'])
+
+    for (const who of [IDENTITIES.CLERK_ROLE_ADMIN, IDENTITIES.ADMIN_UNVERIFIED, IDENTITIES.B]) {
+      expect(await errorData(signIn(t, who).query(api.categories.list, { viewAsUserId: userId })))
+        .toEqual({ code: 'FORBIDDEN', message: 'Forbidden' })
+    }
+
+    vi.unstubAllEnvs()
+    expect(await errorData(signIn(t, IDENTITIES.ADMIN).query(api.categories.list, { viewAsUserId: userId })))
+      .toEqual({ code: 'FORBIDDEN', message: 'Forbidden' })
+    expect(await signIn(t, IDENTITIES.ADMIN).query(api.users.validateViewAsTarget, { userId })).toBeNull()
   })
 })

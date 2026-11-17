@@ -1,16 +1,36 @@
 import { useId, useState } from 'react'
 import { useClerk, useUser } from '@clerk/clerk-react'
-import { CloudOff, LogOut, UserCog } from 'lucide-react'
+import { useNavigate } from 'react-router-dom'
+import { CloudOff, LayoutDashboard, LogOut, UserCog } from 'lucide-react'
 import Sheet, { SheetBody, SheetHeader } from '@/components/shared/Sheet'
 import ConfirmModal from '@/components/modals/ConfirmModal'
 import { useToast } from '@/components/shared/Toast'
 import { useOutbox } from '@/hooks/useOutbox'
+import { useAdminAccess } from '@/hooks/useAdminAccess'
 import { useBrowserOnline } from '@/lib/network'
 import { readLastUserHint } from '@/lib/userHints'
 import { getErrorMessage } from '@/lib/errors'
 import { cn } from '@/lib/utils'
 import { btnOutline, btnSecondary } from '@/lib/ui'
 import { unsyncedSignOutMessage } from '@/lib/pendingEntries'
+
+/** Admins only (server-confirmed): opens /admin. Separate so non-admins never need a router here. */
+function AdminDashboardItem({ disabled, onOpen }: { disabled: boolean; onOpen: () => void }) {
+  const navigate = useNavigate()
+  return (
+    <button
+      type="button"
+      disabled={disabled}
+      onClick={() => {
+        onOpen()
+        navigate('/admin')
+      }}
+      className={cn(btnOutline, 'w-full justify-start')}
+    >
+      <LayoutDashboard size={18} /> Admin dashboard
+    </button>
+  )
+}
 
 /**
  * Avatar button → account sheet (Manage account / Sign out). Replaces Clerk's
@@ -21,6 +41,7 @@ export default function AccountMenu() {
   const clerk = useClerk()
   const online = useBrowserOnline()
   const { pendingCount } = useOutbox()
+  const { isAdmin } = useAdminAccess()
   const { showToast } = useToast()
   const titleId = useId()
   const [open, setOpen] = useState(false)
@@ -89,6 +110,7 @@ export default function AccountMenu() {
                 Connect to the internet to manage your account or sign out.
               </p>
             )}
+            {isAdmin && <AdminDashboardItem disabled={!online} onOpen={() => setOpen(false)} />}
             <button
               type="button"
               disabled={!canUseAccount}

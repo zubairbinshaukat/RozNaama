@@ -2,8 +2,8 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { ConvexError } from 'convex/values'
 import type { UserIdentity } from 'convex/server'
 import { api } from '../../convex/_generated/api'
-import { findUserForIdentity } from '../../convex/model/users'
-import { IDENTITIES, makeIdentity, makeT, signIn, type TestT } from './setup'
+import { adminEmailSet, findUserForIdentity, isAdminFromIdentity } from '../../convex/model/users'
+import { IDENTITIES, makeIdentity, makeT, signIn, stubAdminEmails, type TestT } from './setup'
 
 const A = IDENTITIES.A
 const A_TOKEN = A.tokenIdentifier as string
@@ -51,6 +51,7 @@ function find(t: TestT, who: Partial<UserIdentity>) {
 
 afterEach(() => {
   vi.restoreAllMocks()
+  vi.unstubAllEnvs()
 })
 
 describe('findUserForIdentity (read path)', () => {
@@ -269,5 +270,42 @@ describe('upsertUser timeZone', () => {
       tokenIdentifier: A_TOKEN,
       timeZone: 'Asia/Karachi',
     })
+  })
+})
+
+describe('isAdminFromIdentity (ADMIN_EMAILS)', () => {
+  const asIdentity = (who: Partial<UserIdentity>) => who as UserIdentity
+
+  it('parses a comma-separated, trimmed, case-insensitive list', () => {
+    stubAdminEmails(' One@Example.com,,two@example.com , ')
+    expect([...adminEmailSet()].sort()).toEqual(['one@example.com', 'two@example.com'])
+  })
+
+  it('nobody is admin when ADMIN_EMAILS is unset or blank', () => {
+    expect(adminEmailSet().size).toBe(0)
+    expect(isAdminFromIdentity(asIdentity(IDENTITIES.ADMIN))).toBe(false)
+    stubAdminEmails('   ')
+    expect(isAdminFromIdentity(asIdentity(IDENTITIES.ADMIN))).toBe(false)
+  })
+
+  it('needs a listed email that is not marked unverified', () => {
+    stubAdminEmails()
+    expect(isAdminFromIdentity(asIdentity(IDENTITIES.ADMIN))).toBe(true)
+    expect(isAdminFromIdentity(asIdentity(IDENTITIES.ADMIN_TWO))).toBe(true)
+    expect(isAdminFromIdentity(asIdentity(IDENTITIES.ADMIN_UNVERIFIED))).toBe(false)
+    expect(isAdminFromIdentity(asIdentity({ ...IDENTITIES.ADMIN, email: undefined }))).toBe(false)
+    expect(isAdminFromIdentity(asIdentity(IDENTITIES.A))).toBe(false)
+  })
+
+  it('ignores Clerk role / public_metadata claims', () => {
+    stubAdminEmails()
+    expect(isAdminFromIdentity(asIdentity(IDENTITIES.CLERK_ROLE_ADMIN))).toBe(false)
+  })
+
+  it('does not match a substring or a look-alike email', () => {
+    stubAdminEmails('admin@example.com')
+    for (const email of ['xadmin@example.com', 'admin@example.co', 'admin@example.com.evil', 'admin@example.com,']) {
+      expect(isAdminFromIdentity(asIdentity({ ...IDENTITIES.ADMIN, email }))).toBe(false)
+    }
   })
 })

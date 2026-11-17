@@ -4,7 +4,7 @@ import { validate } from 'convex-helpers/validators'
 import { api } from '../../convex/_generated/api'
 import type { Id } from '../../convex/_generated/dataModel'
 import { expenseDoc, paginated } from '../../convex/lib/returnValidators'
-import { freezeNow, IDENTITIES, makeT, signIn, signInAndUpsert, type TestT } from './setup'
+import { freezeNow, IDENTITIES, makeT, signIn, signInAndUpsert, stubAdminEmails, type TestT } from './setup'
 
 const NOW = '2026-03-10T12:00:00Z'
 const HOUR = 60 * 60 * 1000
@@ -32,9 +32,11 @@ async function expenseCount(t: TestT): Promise<number> {
 let now = 0
 beforeEach(() => {
   now = freezeNow(NOW)
+  stubAdminEmails()
 })
 afterEach(() => {
   vi.useRealTimers()
+  vi.unstubAllEnvs()
 })
 
 describe('expenses auth', () => {

@@ -11,6 +11,7 @@ import {
 } from 'react'
 import { useUser } from '@clerk/clerk-react'
 import { useQuery } from 'convex/react'
+import { useAdminAccess } from '@/hooks/useAdminAccess'
 import { api } from '../../convex/_generated/api'
 import type { Id } from '../../convex/_generated/dataModel'
 import { useToast } from '@/components/shared/Toast'
@@ -22,7 +23,8 @@ type ViewAsContextValue = {
   /** Convex user id to scope read queries, or null when viewing own data */
   viewAsUserId: Id<'users'> | null
   viewAsName:   string | null
-  isClerkAdmin: boolean
+  /** Server-confirmed admin (users.getMyAccess); false while loading. */
+  isAdmin: boolean
   isViewingOther: boolean
   setViewAs:    (id: Id<'users'>, name: string) => void
   clearViewAs:  () => void
@@ -35,14 +37,6 @@ type ViewAsContextValue = {
 }
 
 const ViewAsContext = createContext<ViewAsContextValue | null>(null)
-
-function parseAdminRole(publicMetadata: unknown): boolean {
-  if (!publicMetadata || typeof publicMetadata !== 'object' || Array.isArray(publicMetadata)) {
-    return false
-  }
-  const role = (publicMetadata as { role?: unknown }).role
-  return role === 'Admin'
-}
 
 function readStoredViewAsId(storageKey: string): string | null {
   try {
@@ -74,10 +68,7 @@ export function ViewAsProvider({ children }: { children: ReactNode }) {
 
   const storageKey = user?.id ? `roznaama-admin-view-as-${user.id}` : null
 
-  const isClerkAdmin = useMemo(
-    () => (user ? parseAdminRole(user.publicMetadata) : false),
-    [user],
-  )
+  const { isAdmin, loading: accessLoading } = useAdminAccess()
 
   const persist = useCallback(
     (id: Id<'users'> | null, name: string | null) => {
@@ -100,7 +91,9 @@ export function ViewAsProvider({ children }: { children: ReactNode }) {
     if (!isLoaded) return
 
     const run = () => {
-      if (!user || !isClerkAdmin) {
+      // Wait for the server's answer: never drop a saved target on a guess.
+      if (user && accessLoading) return
+      if (!user || !isAdmin) {
         setViewAsUserId(null)
         setViewAsName(null)
         setPendingId(null)
@@ -125,11 +118,11 @@ export function ViewAsProvider({ children }: { children: ReactNode }) {
     }
 
     queueMicrotask(run)
-  }, [isLoaded, user, isClerkAdmin, storageKey, restoredKey])
+  }, [isLoaded, user, isAdmin, accessLoading, storageKey, restoredKey])
 
   const validation = useQuery(
     api.users.validateViewAsTarget,
-    isClerkAdmin && pendingId ? { userId: pendingId } : 'skip',
+    isAdmin && pendingId ? { userId: pendingId } : 'skip',
   )
 
   useEffect(() => {
@@ -185,14 +178,19 @@ export function ViewAsProvider({ children }: { children: ReactNode }) {
 
   const viewAsUserIdForQuery = viewAsUserId ?? undefined
 
+  // A saved target exists but admin access is not confirmed yet: hold the
+  // data views back too (no flash of the admin's own numbers).
+  const awaitingAccess =
+    accessLoading && storageKey !== null && restoredKey !== storageKey && readStoredViewAsId(storageKey) !== null
   const isResolvingViewAs =
-    isLoaded && isClerkAdmin && storageKey !== null && (restoredKey !== storageKey || pendingId !== null)
+    isLoaded && storageKey !== null &&
+    (awaitingAccess || (isAdmin && (restoredKey !== storageKey || pendingId !== null)))
 
   const value = useMemo(
     (): ViewAsContextValue => ({
       viewAsUserId,
       viewAsName,
-      isClerkAdmin,
+      isAdmin,
       isViewingOther,
       setViewAs,
       clearViewAs,
@@ -203,7 +201,7 @@ export function ViewAsProvider({ children }: { children: ReactNode }) {
     [
       viewAsUserId,
       viewAsName,
-      isClerkAdmin,
+      isAdmin,
       isViewingOther,
       setViewAs,
       clearViewAs,
@@ -228,6 +226,46 @@ export function useViewAs(): ViewAsContextValue {
     throw new Error('useViewAs must be used within ViewAsProvider')
   }
   return ctx
+}
+
+const noop = () => {}
+
+/**
+ * Scope every data hook / component below to `userId` (read-only), without
+ * touching the app-wide view-as state: the admin dashboard renders the normal
+ * PeriodSummary / charts / day lists for a selected user this way. Writes stay
+ * disabled (isViewingOther), snapshots are neither read nor written and the
+ * outbox overlay is off. `setViewAs` / `clearViewAs` still reach the real
+ * provider, so "View as this user" enters the normal impersonation mode.
+ */
+export function ViewAsOverride({
+  userId,
+  name,
+  onInvalid,
+  children,
+}: {
+  userId: Id<'users'>
+  name: string | null
+  /** The user became unavailable (deleted / FORBIDDEN) while shown. */
+  onInvalid: () => void
+  children: ReactNode
+}) {
+  const parent = useContext(ViewAsContext)
+  const value = useMemo(
+    (): ViewAsContextValue => ({
+      viewAsUserId:         userId,
+      viewAsName:           name,
+      isAdmin:              parent?.isAdmin ?? false,
+      isViewingOther:       true,
+      setViewAs:            parent?.setViewAs ?? noop,
+      clearViewAs:          parent?.clearViewAs ?? noop,
+      viewAsUserIdForQuery: userId,
+      isResolvingViewAs:    false,
+      handleViewAsInvalid:  onInvalid,
+    }),
+    [userId, name, parent?.isAdmin, parent?.setViewAs, parent?.clearViewAs, onInvalid],
+  )
+  return <ViewAsContext.Provider value={value}>{children}</ViewAsContext.Provider>
 }
 
 /** For hooks: returns undefined when not viewing as another user (own data). */

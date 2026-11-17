@@ -56,21 +56,37 @@ function identity(subject: string, email: string, name: string, extra: Record<st
   } as TestIdentity
 }
 
-/** Test identities. ADMIN uses `public_metadata.role`; variants cover other claim shapes. */
+/**
+ * Value of the ADMIN_EMAILS env var used by `stubAdminEmails()`: messy on
+ * purpose (spaces, mixed case, empty entries) to exercise the parser.
+ */
+export const TEST_ADMIN_EMAILS = ' Admin@Example.com ,, ADMIN2@example.com '
+
+/**
+ * Admin = verified JWT email listed in ADMIN_EMAILS. Call in `beforeEach`
+ * (undo with `vi.unstubAllEnvs()` in afterEach) wherever ADMIN must be admin.
+ */
+export function stubAdminEmails(value: string = TEST_ADMIN_EMAILS): void {
+  vi.stubEnv('ADMIN_EMAILS', value)
+}
+
+/**
+ * Test identities. ADMIN / ADMIN_TWO are admins once `stubAdminEmails()` ran;
+ * the others never are (Clerk roles are ignored).
+ */
 export const IDENTITIES = {
   A: identity('user_a', 'a@example.com', 'Alice'),
   B: identity('user_b', 'b@example.com', 'Bilal'),
-  ADMIN: identity('user_admin', 'admin@example.com', 'Admin', {
+  ADMIN: identity('user_admin', 'admin@example.com', 'Admin', { emailVerified: true }),
+  /** Listed admin email, but in different case; no emailVerified claim at all. */
+  ADMIN_TWO: identity('user_admin2', 'Admin2@Example.COM', 'Admin Two'),
+  /** Listed admin email whose verification claim is false → never admin. */
+  ADMIN_UNVERIFIED: identity('user_admin3', 'admin@example.com', 'Admin Unverified', { emailVerified: false }),
+  /** Old Clerk-role admin: no longer grants anything. */
+  CLERK_ROLE_ADMIN: identity('user_admin4', 'role-admin@example.com', 'Role Admin', {
     public_metadata: { role: 'Admin' },
-  }),
-  ADMIN_CAMEL: identity('user_admin2', 'admin2@example.com', 'Admin Two', {
     publicMetadata: { role: 'Admin' },
-  }),
-  ADMIN_TOP_LEVEL: identity('user_admin3', 'admin3@example.com', 'Admin Three', {
     role: 'Admin',
-  }),
-  ADMIN_NAMESPACED: identity('user_admin4', 'admin4@example.com', 'Admin Four', {
-    'https://x/public_metadata': { role: 'Admin' },
   }),
   NOT_ADMIN_ROLE: identity('user_c', 'c@example.com', 'Chaudhry', {
     public_metadata: { role: 'Member' },

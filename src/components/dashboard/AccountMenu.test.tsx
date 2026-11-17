@@ -1,10 +1,11 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import AccountMenu from './AccountMenu'
 
 const signOut = vi.fn(async () => {})
 const openUserProfile = vi.fn()
-const state = { pendingCount: 0, online: true }
+const state = { pendingCount: 0, online: true, isAdmin: false }
 
 vi.mock('@clerk/clerk-react', () => ({
   useUser: () => ({
@@ -15,6 +16,9 @@ vi.mock('@clerk/clerk-react', () => ({
 }))
 vi.mock('@/hooks/useOutbox', () => ({
   useOutbox: () => ({ pendingCount: state.pendingCount }),
+}))
+vi.mock('@/hooks/useAdminAccess', () => ({
+  useAdminAccess: () => ({ isAdmin: state.isAdmin, loading: false }),
 }))
 vi.mock('@/lib/network', () => ({
   useBrowserOnline: () => state.online,
@@ -29,6 +33,7 @@ afterEach(() => {
   openUserProfile.mockClear()
   state.pendingCount = 0
   state.online = true
+  state.isAdmin = false
 })
 
 function openMenu() {
@@ -78,5 +83,28 @@ describe('AccountMenu sign-out', () => {
     expect(within(sheet).getByText(/Connect to the internet/)).toBeTruthy()
     expect(within(sheet).getByRole('button', { name: /sign out/i })).toHaveProperty('disabled', true)
     expect(within(sheet).getByRole('button', { name: /manage account/i })).toHaveProperty('disabled', true)
+  })
+})
+
+describe('AccountMenu admin entry', () => {
+  it('is hidden for non-admins (no router needed)', () => {
+    const sheet = openMenu()
+    expect(within(sheet).queryByRole('button', { name: /admin dashboard/i })).toBeNull()
+  })
+
+  it('admins get "Admin dashboard", which opens /admin', () => {
+    state.isAdmin = true
+    render(
+      <MemoryRouter initialEntries={['/dashboard']}>
+        <Routes>
+          <Route path="/dashboard" element={<AccountMenu />} />
+          <Route path="/admin" element={<p>admin page</p>} />
+        </Routes>
+      </MemoryRouter>,
+    )
+    fireEvent.click(screen.getByRole('button', { name: /^Account/ }))
+    const sheet = screen.getByRole('dialog', { name: 'Ali Khan' })
+    fireEvent.click(within(sheet).getByRole('button', { name: /admin dashboard/i }))
+    expect(screen.getByText('admin page')).toBeTruthy()
   })
 })

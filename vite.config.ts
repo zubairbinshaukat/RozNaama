@@ -71,6 +71,9 @@ export default defineConfig(({ mode }) => {
         workbox: {
           // Includes every lazy route chunk and the self-hosted Inter woff2 files.
           globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2}'],
+          // The admin page chunk is never precached, so shopkeepers' phones never
+          // download it; admins fetch it on first open (cached at runtime below).
+          globIgnores: ['**/assets/Admin-*.js'],
           navigateFallback: '/index.html',
           navigateFallbackDenylist: [/^\/api\//],
           // New deploys take over at once and old precaches are removed, so an
@@ -79,6 +82,17 @@ export default defineConfig(({ mode }) => {
           clientsClaim: true,
           cleanupOutdatedCaches: true,
           runtimeCaching: [
+            {
+              // Admin page chunk (see globIgnores): cached after an admin opens it.
+              urlPattern: /\/assets\/Admin-[^/]+\.js$/,
+              handler: 'StaleWhileRevalidate',
+              method: 'GET',
+              options: {
+                cacheName: 'admin-chunk',
+                cacheableResponse: { statuses: [200] },
+                expiration: { maxEntries: 4, maxAgeSeconds: 60 * 60 * 24 * 30 },
+              },
+            },
             {
               // clerk-js bundle + its lazy chunks from Clerk's CDN
               // (https://<frontendApi>/npm/@clerk/clerk-js@<CLERK_JS_VERSION>/dist/…).

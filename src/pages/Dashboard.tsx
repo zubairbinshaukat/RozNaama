@@ -182,7 +182,7 @@ export default function Dashboard() {
     setPeriodSelection((s) => selectPeriod(s, activeTab, value))
   }, [activeTab])
 
-  const { isViewingOther, viewAsName, viewAsUserId, handleViewAsInvalid, clearViewAs, isClerkAdmin } = useViewAs()
+  const { isViewingOther, viewAsName, viewAsUserId, handleViewAsInvalid, clearViewAs, isAdmin } = useViewAs()
   const { showToast } = useToast()
   const canEditOnline = useCanEditOnline()
   usePrefetchEntrySheets()
@@ -280,7 +280,7 @@ export default function Dashboard() {
               </div>
               <div className="flex items-center gap-1.5 shrink-0">
                 {/* Admin-only code: never downloaded for shopkeepers. */}
-                {isClerkAdmin && (
+                {isAdmin && (
                   <Suspense fallback={null}>
                     <AdminAccessDialog />
                   </Suspense>

@@ -14,7 +14,9 @@ export default defineSchema({
     timeZone:        v.optional(v.string()),
   })
     .index('by_email', ['email'])
-    .index('by_token', ['tokenIdentifier']),
+    .index('by_token', ['tokenIdentifier'])
+    // Admin dashboard (additive): users list sorted by name.
+    .index('by_name', ['name']),
 
   // User-defined groupings for sales
   categories: defineTable({

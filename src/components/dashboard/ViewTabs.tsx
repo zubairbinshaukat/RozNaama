@@ -35,8 +35,11 @@ function useTabKeys(active: View, onChange: (v: View) => void, variant: 'top' | 
   return { listRef, onKeyDown }
 }
 
-/** Segmented control above the content (tablet / desktop). */
-export function SegmentedTabs({ active, onChange }: ViewTabsProps) {
+/**
+ * Segmented control above the content (tablet / desktop; phones use the
+ * bottom bar unless `showOnPhones`, e.g. the admin user detail).
+ */
+export function SegmentedTabs({ active, onChange, showOnPhones = false }: ViewTabsProps & { showOnPhones?: boolean }) {
   const { listRef, onKeyDown } = useTabKeys(active, onChange, 'top')
   return (
     <div
@@ -44,7 +47,7 @@ export function SegmentedTabs({ active, onChange }: ViewTabsProps) {
       role="tablist"
       aria-label="Choose period"
       onKeyDown={onKeyDown}
-      className="hidden sm:grid grid-cols-4 gap-1 p-1 rounded-2xl bg-muted border border-border/60"
+      className={cn('grid-cols-4 gap-1 p-1 rounded-2xl bg-muted border border-border/60', showOnPhones ? 'grid' : 'hidden sm:grid')}
     >
       {VIEWS.map((v) => {
         const Icon = ICONS[v]
@@ -60,7 +63,7 @@ export function SegmentedTabs({ active, onChange }: ViewTabsProps) {
             tabIndex={selected ? 0 : -1}
             onClick={() => onChange(v)}
             className={cn(
-              'relative min-h-11 flex items-center justify-center gap-2 rounded-xl text-[15px] font-semibold',
+              'relative min-h-11 flex items-center justify-center gap-1.5 sm:gap-2 rounded-xl text-sm sm:text-[15px] font-semibold',
               'transition-colors duration-150 active:scale-[0.97]',
               selected ? 'text-foreground' : 'text-muted-foreground hover:text-foreground',
             )}
@@ -73,7 +76,7 @@ export function SegmentedTabs({ active, onChange }: ViewTabsProps) {
                 aria-hidden
               />
             )}
-            <Icon size={16} className="relative" aria-hidden />
+            <Icon size={16} className={cn('relative', showOnPhones && 'hidden min-[420px]:block')} aria-hidden />
             <span className="relative">{VIEW_LABELS[v]}</span>
           </button>
         )

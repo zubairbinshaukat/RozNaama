@@ -61,7 +61,9 @@ Both are required. If missing, the app shows a setup instructions page instead o
 
 `CLERK_JWT_ISSUER_DOMAIN` is required for auth: without it, `ctx.auth.getUserIdentity()` is null and Convex functions throw `Unauthorized`.
 
-**Admin “Access” (view other users):** Convex checks `role === "Admin"` on the JWT (top-level, `public_metadata`, `publicMetadata`, or a namespaced `…/public_metadata` claim; `convex/model/users.ts`). Ensure the [Clerk JWT template for Convex](https://clerk.com/docs/backend-requests/jwt-templates) includes **`public_metadata`** (or **`publicMetadata`**) so server-side admin checks match `user.publicMetadata` in the app.
+| `ADMIN_EMAILS` | Comma-separated admin emails (trimmed, case-insensitive). Unset = nobody is admin. |
+
+**Admin (dashboard at `/admin` + “Access / View as”):** admin = the caller's JWT `email` is listed in `ADMIN_EMAILS` and the `email_verified` claim is not `false` (`isAdminFromIdentity`, `convex/model/users.ts`). Clerk roles / `public_metadata` are no longer consulted. The frontend asks `users.getMyAccess` (`src/hooks/useAdminAccess.ts`); every admin function re-checks on the server (`adminQuery`).
 
 ---
 
@@ -94,6 +96,11 @@ Both are required. If missing, the app shows a setup instructions page instead o
 - A day is never split across pages. An unbound page ends after its last whole day. A re-bound (`endCursor`) page that outgrows the caps (1000 sessions/expenses or 200 days) returns `pageStatus: 'SplitRequired'` + `splitCursor`, and the hook re-queries it as two pages. A single day with more than 1000 rows comes back alone; above 2000 rows per table its entry has `truncated: true` (newest rows only).
 - Category modal: `sales.listByCategoryIdPaginated` + `sales.getCategorySummary` (`src/hooks/useCategorySales.ts`).
 - Old list queries (`getForDate`, `getSessionsForRange*`, `getSessionsPaginated`, `expenses.getForRange*`/`getPaginated`, `sales.listByCategoryId`) are `@deprecated`. They stay until 2026-12-17 for cached PWA clients.
+
+### Admin dashboard
+- Route `/admin/*` (lazy `src/pages/Admin.tsx`, components in `src/components/admin/`) shares one `ProtectedRoute` + `ViewAsProvider` layout with `/dashboard`. `AdminGuard` renders it only after `getMyAccess` says yes, so the chunk never loads for shopkeepers; it is also excluded from the SW precache (`vite.config.ts` `globIgnores`).
+- Backend `convex/admin.ts` (read-only, `adminQuery`): `overview` (one row per user, paginated; the client sums every page), `listUsers` (paginated, `search`, server sorts `newest | oldest | name`), `getUser`. Helpers in `convex/model/adminStats.ts`: summary tables when ready, else capped scans flagged `partial`.
+- A selected user's KPI cards / charts reuse the normal per-user queries via `ViewAsOverride` (`src/context/ViewAsContext.tsx`), which scopes `viewAsUserId` for a subtree without changing the app-wide view-as.
 
 ### Theme system
 - Three themes: `light` (default), `dark`, `midnight`

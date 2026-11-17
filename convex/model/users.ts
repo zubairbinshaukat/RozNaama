@@ -20,45 +20,41 @@ import {
   unauthorizedError,
   userNotFoundError,
 } from '../lib/errors'
+import { readEnv } from '../lib/env'
 import { USER_NAME_MAX } from '../lib/limits'
 import { normalizeTimeZone } from '../lib/time'
 
 type AuthCtx = Pick<QueryCtx, 'auth'>
 type ReadCtx = QueryCtx | MutationCtx
 
-function roleFromUnknown(value: unknown): string | undefined {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined
-  const role = (value as { role?: unknown }).role
-  return typeof role === 'string' ? role : undefined
+/** Deployment env var: comma-separated admin emails (trimmed, case-insensitive). */
+export const ADMIN_EMAILS_ENV = 'ADMIN_EMAILS'
+
+/** Lower-cased admin emails from `ADMIN_EMAILS`; empty (nobody is admin) when unset. */
+export function adminEmailSet(): Set<string> {
+  const raw = readEnv(ADMIN_EMAILS_ENV) ?? ''
+  const emails = new Set<string>()
+  for (const part of raw.split(',')) {
+    const email = part.trim().toLowerCase()
+    if (email.length > 0) emails.add(email)
+  }
+  return emails
 }
 
 /**
- * Admin is determined from Clerk JWT claims (`role: "Admin"`).
- * Different Clerk templates can expose this as:
- * - top-level role
- * - public_metadata.role / publicMetadata.role
- * - namespaced claim ending in /public_metadata or /publicMetadata
+ * Admin = the caller's VERIFIED JWT email is listed in `ADMIN_EMAILS`.
+ * - `ADMIN_EMAILS` unset / blank → nobody is admin (safe default);
+ * - an identity whose `emailVerified` claim is `false` is never admin (a
+ *   missing claim is accepted, as Clerk templates may omit it);
+ * - Clerk roles / public_metadata are NOT consulted (the client cannot grant
+ *   itself admin by editing metadata).
  */
-function getRoleFromIdentity(identity: UserIdentity): string | undefined {
-  const rec = identity as Record<string, unknown>
-
-  if (typeof rec.role === 'string') return rec.role
-
-  const direct = roleFromUnknown(rec.public_metadata) ?? roleFromUnknown(rec.publicMetadata)
-  if (direct) return direct
-
-  for (const [key, value] of Object.entries(rec)) {
-    if (key.endsWith('/public_metadata') || key.endsWith('/publicMetadata')) {
-      const namespacedRole = roleFromUnknown(value)
-      if (namespacedRole) return namespacedRole
-    }
-  }
-
-  return undefined
-}
-
 export function isAdminFromIdentity(identity: UserIdentity): boolean {
-  return getRoleFromIdentity(identity) === 'Admin'
+  const email = emailOf(identity)
+  if (!email) return false
+  const verified: unknown = identity.emailVerified
+  if (verified === false) return false
+  return adminEmailSet().has(email.trim().toLowerCase())
 }
 
 /** Signed-in identity or throw `{ code: 'UNAUTHORIZED', message: 'Unauthorized' }`. */

@@ -8,6 +8,7 @@
  * @module
  */
 
+import type * as admin from "../admin.js";
 import type * as audit from "../audit.js";
 import type * as categories from "../categories.js";
 import type * as clientRequests from "../clientRequests.js";
@@ -22,6 +23,7 @@ import type * as lib_returnValidators from "../lib/returnValidators.js";
 import type * as lib_time from "../lib/time.js";
 import type * as lib_validation from "../lib/validation.js";
 import type * as migrations from "../migrations.js";
+import type * as model_adminStats from "../model/adminStats.js";
 import type * as model_categories from "../model/categories.js";
 import type * as model_expenses from "../model/expenses.js";
 import type * as model_idempotency from "../model/idempotency.js";
@@ -41,6 +43,7 @@ import type {
 } from "convex/server";
 
 declare const fullApi: ApiFromModules<{
+  admin: typeof admin;
   audit: typeof audit;
   categories: typeof categories;
   clientRequests: typeof clientRequests;
@@ -55,6 +58,7 @@ declare const fullApi: ApiFromModules<{
   "lib/time": typeof lib_time;
   "lib/validation": typeof lib_validation;
   migrations: typeof migrations;
+  "model/adminStats": typeof model_adminStats;
   "model/categories": typeof model_categories;
   "model/expenses": typeof model_expenses;
   "model/idempotency": typeof model_idempotency;

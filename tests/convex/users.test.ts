@@ -1,7 +1,10 @@
-import { describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { ConvexError } from 'convex/values'
 import { api } from '../../convex/_generated/api'
-import { IDENTITIES, makeT, signIn, signInAndUpsert } from './setup'
+import { IDENTITIES, makeT, signIn, signInAndUpsert, stubAdminEmails } from './setup'
+
+beforeEach(() => stubAdminEmails())
+afterEach(() => vi.unstubAllEnvs())
 
 async function convexErrorData(promise: Promise<unknown>): Promise<unknown> {
   try {
@@ -101,11 +104,27 @@ describe('users.listForAdmin', () => {
       .toEqual({ code: 'FORBIDDEN', message: 'Forbidden' })
   })
 
+  it('a Clerk "Admin" role alone no longer grants access; an unverified listed email neither', async () => {
+    const t = makeT()
+    for (const who of [IDENTITIES.CLERK_ROLE_ADMIN, IDENTITIES.ADMIN_UNVERIFIED]) {
+      expect(await convexErrorData(signIn(t, who).query(api.users.listForAdmin, {})))
+        .toEqual({ code: 'FORBIDDEN', message: 'Forbidden' })
+    }
+  })
+
+  it('nobody is admin when ADMIN_EMAILS is unset or blank', async () => {
+    const t = makeT()
+    for (const value of [undefined, '', ' , ']) {
+      if (value === undefined) vi.unstubAllEnvs()
+      else stubAdminEmails(value)
+      expect(await convexErrorData(signIn(t, IDENTITIES.ADMIN).query(api.users.listForAdmin, {})))
+        .toEqual({ code: 'FORBIDDEN', message: 'Forbidden' })
+    }
+  })
+
   it.each([
-    ['public_metadata.role', IDENTITIES.ADMIN],
-    ['publicMetadata.role', IDENTITIES.ADMIN_CAMEL],
-    ['top-level role', IDENTITIES.ADMIN_TOP_LEVEL],
-    ['namespaced /public_metadata', IDENTITIES.ADMIN_NAMESPACED],
+    ['listed email (verified)', IDENTITIES.ADMIN],
+    ['listed email, other case, no verification claim', IDENTITIES.ADMIN_TWO],
   ])('allows admins via %s and returns sorted {_id, name, email} rows', async (_label, admin) => {
     const t = makeT()
     const { userId: bId } = await signInAndUpsert(t, IDENTITIES.B)
@@ -116,6 +135,30 @@ describe('users.listForAdmin', () => {
       { _id: aId, name: 'Alice', email: 'a@example.com' },
       { _id: bId, name: 'Bilal', email: 'b@example.com' },
     ])
+  })
+})
+
+describe('users.getMyAccess', () => {
+  it('is true only for a verified listed email; never throws', async () => {
+    const t = makeT()
+    expect(await t.query(api.users.getMyAccess, {})).toEqual({ isAdmin: false })
+    expect(await signIn(t, IDENTITIES.A).query(api.users.getMyAccess, {})).toEqual({ isAdmin: false })
+    expect(await signIn(t, IDENTITIES.CLERK_ROLE_ADMIN).query(api.users.getMyAccess, {})).toEqual({ isAdmin: false })
+    expect(await signIn(t, IDENTITIES.ADMIN_UNVERIFIED).query(api.users.getMyAccess, {})).toEqual({ isAdmin: false })
+    expect(await signIn(t, IDENTITIES.ADMIN).query(api.users.getMyAccess, {})).toEqual({ isAdmin: true })
+    expect(await signIn(t, IDENTITIES.ADMIN_TWO).query(api.users.getMyAccess, {})).toEqual({ isAdmin: true })
+  })
+
+  it('is false for everyone when ADMIN_EMAILS is unset', async () => {
+    vi.unstubAllEnvs()
+    const t = makeT()
+    expect(await signIn(t, IDENTITIES.ADMIN).query(api.users.getMyAccess, {})).toEqual({ isAdmin: false })
+  })
+
+  it('works before the admin has a users row', async () => {
+    const t = makeT()
+    expect(await signIn(t, IDENTITIES.ADMIN).query(api.users.getMyAccess, {})).toEqual({ isAdmin: true })
+    expect(await t.run((ctx) => ctx.db.query('users').collect())).toHaveLength(0)
   })
 })
 

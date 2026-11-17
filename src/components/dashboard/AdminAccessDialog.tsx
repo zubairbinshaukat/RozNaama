@@ -61,12 +61,12 @@ function AdminUserList({ onSelect, currentId }: { onSelect: (id: Id<'users'>, na
 }
 
 export default function AdminAccessDialog() {
-  const { isClerkAdmin, viewAsName, viewAsUserId, isViewingOther, clearViewAs, setViewAs } = useViewAs()
+  const { isAdmin, viewAsName, viewAsUserId, isViewingOther, clearViewAs, setViewAs } = useViewAs()
   const { showToast } = useToast()
   const [open, setOpen] = useState(false)
   const titleId = useId()
 
-  if (!isClerkAdmin) return null
+  if (!isAdmin) return null
 
   const buttonLabel = isViewingOther && viewAsName ? viewAsName : 'Access'
 

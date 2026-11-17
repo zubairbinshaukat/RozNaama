@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { ConvexError } from 'convex/values'
 import { api } from '../../convex/_generated/api'
 import type { Id } from '../../convex/_generated/dataModel'
-import { IDENTITIES, freezeNow, makeT, signIn, signInAndUpsert, type TestT } from './setup'
+import { IDENTITIES, freezeNow, makeT, signIn, signInAndUpsert, stubAdminEmails, type TestT } from './setup'
 
 const NOW = '2026-11-17T12:00:00Z'
 const DAY = 24 * 60 * 60 * 1000
@@ -40,9 +40,11 @@ function getSale(t: TestT, id: Id<'sales'>) {
 
 beforeEach(() => {
   freezeNow(NOW)
+  stubAdminEmails()
 })
 afterEach(() => {
   vi.useRealTimers()
+  vi.unstubAllEnvs()
 })
 
 async function setup() {

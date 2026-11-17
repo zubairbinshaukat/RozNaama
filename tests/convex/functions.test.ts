@@ -1,10 +1,13 @@
-import { describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { defineTestApp } from 'convex-test'
 import { ConvexError, v } from 'convex/values'
 import schema from '../../convex/schema'
 import { adminQuery, authedMutation, authedQuery } from '../../convex/lib/functions'
 import { assertOwnedCategory, getOwned } from '../../convex/lib/ownership'
-import { IDENTITIES } from './setup'
+import { IDENTITIES, stubAdminEmails } from './setup'
+
+beforeEach(() => stubAdminEmails())
+afterEach(() => vi.unstubAllEnvs())
 
 const app = defineTestApp({ schema })
 const { api, createTest } = app.defineModules({
@@ -104,12 +107,20 @@ describe('lib/functions wrappers', () => {
     expect(await asA.mutation(api.probe.touch, {})).toBe(aId)
   })
 
-  it('adminQuery: admins only', async () => {
+  it('adminQuery: only verified emails listed in ADMIN_EMAILS', async () => {
     const t = createTest()
-    expect(await errorData(t.withIdentity(IDENTITIES.A).query(api.probe.adminPing, {})))
+    expect(await errorData(t.query(api.probe.adminPing, {})))
+      .toEqual({ code: 'UNAUTHORIZED', message: 'Unauthorized' })
+    for (const who of [IDENTITIES.A, IDENTITIES.CLERK_ROLE_ADMIN, IDENTITIES.ADMIN_UNVERIFIED]) {
+      expect(await errorData(t.withIdentity(who).query(api.probe.adminPing, {})))
+        .toEqual({ code: 'FORBIDDEN', message: 'Forbidden' })
+    }
+    expect(await t.withIdentity(IDENTITIES.ADMIN).query(api.probe.adminPing, {})).toBe('admin@example.com')
+    expect(await t.withIdentity(IDENTITIES.ADMIN_TWO).query(api.probe.adminPing, {})).toBe('Admin2@Example.COM')
+
+    vi.unstubAllEnvs()
+    expect(await errorData(t.withIdentity(IDENTITIES.ADMIN).query(api.probe.adminPing, {})))
       .toEqual({ code: 'FORBIDDEN', message: 'Forbidden' })
-    expect(await t.withIdentity(IDENTITIES.ADMIN_NAMESPACED).query(api.probe.adminPing, {}))
-      .toBe('admin4@example.com')
   })
 })
 

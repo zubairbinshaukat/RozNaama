@@ -340,3 +340,19 @@ Deploy this **before** any frontend that sends `clientRequestId`. An older backe
 
   A phone that replays an entry more than 180 days old, after its row was pruned, would create it again. The outbox flushes long before that.
 - **Rollback:** older function code ignores the table. Keep it in `convex/schema.ts` if you redeploy older functions, as for the other v2 tables.
+
+---
+
+## 7. Admin dashboard (`ADMIN_EMAILS`)
+
+- **Admin check changed:** admin is now the caller's JWT email listed in the env var `ADMIN_EMAILS` (comma-separated, case-insensitive), with `email_verified` not `false`. The Clerk `role: "Admin"` / `public_metadata` check is gone. **Set the env var before (or right with) the deploy**, or the existing "Access / View as" button disappears for you (unset = nobody is admin).
+
+  ```powershell
+  npx convex env set ADMIN_EMAILS "zubairbinshaukat4455@gmail.com"
+  npx convex env set --prod ADMIN_EMAILS "zubairbinshaukat4455@gmail.com"
+  npx convex env list --prod   # check
+  ```
+
+- **Schema (additive):** index `users.by_name` (small backfill on deploy). New read-only functions `admin:overview`, `admin:listUsers`, `admin:getUser`, `users:getMyAccess`. `convex/_generated/api.d.ts` gains `admin` and `model/adminStats`.
+- **Limits:** `overview` reads ≤ 40 users per page (≈ 33 docs per ready user, ≤ 500 for a not-ready one) and the page loads every page; `listUsers` ≤ 25 rows per page, search examines ≤ 1000 users per page. Users whose totals are not ready are read from capped scans and flagged `partial`.
+- **Deploy order:** backend first. An old frontend keeps working (it only used `validateViewAsTarget`, `listForAdmin` and `viewAsUserId`, which are unchanged), but it decides admin UI from Clerk metadata, so the server now answers FORBIDDEN unless your email is in `ADMIN_EMAILS`.

@@ -28,7 +28,22 @@ export const upsertUser = mutation({
   },
 })
 
-/** All users (admin only). Clerk JWT must include public_metadata with role "Admin". */
+/**
+ * Whether the signed-in caller is an admin (verified JWT email listed in the
+ * ADMIN_EMAILS env var). Never throws: `{ isAdmin: false }` when signed out.
+ * The frontend uses this instead of Clerk metadata; the server still checks
+ * every admin function itself.
+ */
+export const getMyAccess = query({
+  args: {},
+  returns: v.object({ isAdmin: v.boolean() }),
+  handler: async (ctx) => {
+    const identity = await ctx.auth.getUserIdentity()
+    return { isAdmin: identity !== null && isAdminFromIdentity(identity) }
+  },
+})
+
+/** All users (admin only: verified email listed in ADMIN_EMAILS). */
 export const listForAdmin = adminQuery({
   args: {},
   returns: v.array(adminUserRow),

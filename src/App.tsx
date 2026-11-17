@@ -1,9 +1,10 @@
 import { lazy, Suspense } from 'react'
-import { Routes, Route, Navigate } from 'react-router-dom'
+import { Routes, Route, Navigate, Outlet } from 'react-router-dom'
 import { MotionConfig } from 'framer-motion'
 import { ToastProvider } from '@/components/shared/Toast'
 import { ViewAsProvider } from '@/context/ViewAsContext'
 import ProtectedRoute from '@/components/shared/ProtectedRoute'
+import AdminGuard from '@/components/admin/AdminGuard'
 import LoadingScreen from '@/components/shared/LoadingScreen'
 import OfflineBanner from '@/components/shared/OfflineBanner'
 import SessionWatcher from '@/components/shared/SessionWatcher'
@@ -18,6 +19,10 @@ const SignInPage = lazy(() => import('@/pages/SignInPage'))
 const SignUpPage = lazy(() => import('@/pages/SignUpPage'))
 const loadDashboard = () => import('@/pages/Dashboard')
 const Dashboard  = lazy(loadDashboard)
+// Admin-only chunk: requested only after AdminGuard has the server's yes, and
+// kept out of the service-worker precache (vite.config.ts), so shopkeepers
+// never download it.
+const Admin      = lazy(() => import('@/pages/Admin'))
 
 // Don't let the Dashboard chunk download wait behind Clerk + Convex auth:
 // on /dashboard (the PWA start_url) fetch it in parallel right away; from the
@@ -61,16 +66,27 @@ export default function App() {
             <Route path="/"         element={<Landing />} />
             <Route path="/sign-in/*" element={<SignInPage />} />
             <Route path="/sign-up/*" element={<SignUpPage />} />
+            {/* One guard + view-as state for /dashboard and /admin, so going from the
+                admin dashboard to "View as" keeps the session and the choice. */}
             <Route
-              path="/dashboard"
               element={
                 <ProtectedRoute>
                   <ViewAsProvider>
-                    <Dashboard />
+                    <Outlet />
                   </ViewAsProvider>
                 </ProtectedRoute>
               }
-            />
+            >
+              <Route path="/dashboard" element={<Dashboard />} />
+              <Route
+                path="/admin/*"
+                element={
+                  <AdminGuard>
+                    <Admin />
+                  </AdminGuard>
+                }
+              />
+            </Route>
             {/* Catch-all → home */}
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
