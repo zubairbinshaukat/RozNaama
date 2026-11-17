@@ -1,22 +1,31 @@
-import { ConvexError, v } from 'convex/values'
-import { mutation, query } from './_generated/server'
+import { v } from 'convex/values'
+import { paginationOptsValidator } from 'convex/server'
 import type { Id } from './_generated/dataModel'
-import { requireUser, resolveDataUser } from './authHelpers'
+import { authedMutation, authedQuery } from './lib/functions'
+import { getOwned } from './lib/ownership'
+import { categoryCount, paginated, saleDoc } from './lib/returnValidators'
+import { removeSaleItem, updateSaleItem } from './model/sales'
+import { categoryStatsReady, getCategoryStatsRow, safe } from './model/totals'
 
-/** All sale line items for a category (newest by saleDate first in handler sort) */
-export const listByCategoryId = query({
+const EMPTY_PAGE = { page: [], isDone: true, continueCursor: '' }
+
+/**
+ * All sale line items for a category (newest by saleDate first in handler sort).
+ * @deprecated kept for cached PWA clients; remove after 2026-12-17 (new UI uses listByCategoryIdPaginated + getCategorySummary).
+ */
+export const listByCategoryId = authedQuery({
   args: {
-    categoryId:   v.id('categories'),
-    viewAsUserId: v.optional(v.id('users')),
+    categoryId: v.id('categories'),
   },
+  returns: v.array(saleDoc),
   handler: async (ctx, args) => {
-    const user = await resolveDataUser(ctx, args.viewAsUserId)
+    const user = ctx.user
     if (!user) return []
 
     const rows = await ctx.db
       .query('sales')
       .withIndex('by_userId_categoryId', (q) =>
-        q.eq('userId', user._id).eq('categoryId', args.categoryId)
+        q.eq('userId', user._id).eq('categoryId', args.categoryId),
       )
       .collect()
 
@@ -25,12 +34,91 @@ export const listByCategoryId = query({
   },
 })
 
-/** Total number of sale line items per category */
-export const getCountsByCategory = query({
-  args: { viewAsUserId: v.optional(v.id('users')) },
+/**
+ * Sale line items for one of the user's categories, newest saleDate first
+ * (paginated). A missing or another user's categoryId yields an empty page.
+ */
+export const listByCategoryIdPaginated = authedQuery({
+  args: {
+    categoryId:     v.id('categories'),
+    paginationOpts: paginationOptsValidator,
+  },
+  returns: paginated(saleDoc),
   handler: async (ctx, args) => {
-    const user = await resolveDataUser(ctx, args.viewAsUserId)
+    const user = ctx.user
+    if (!user) return EMPTY_PAGE
+    if (!(await getOwned(ctx, 'categories', args.categoryId, user._id))) return EMPTY_PAGE
+
+    return ctx.db
+      .query('sales')
+      .withIndex('by_userId_categoryId_saleDate', (q) =>
+        q.eq('userId', user._id).eq('categoryId', args.categoryId),
+      )
+      .order('desc')
+      .paginate(args.paginationOpts)
+  },
+})
+
+/** Max sales summed by the getCategorySummary fallback before categoryStats is ready. */
+export const CATEGORY_SUMMARY_SCAN_LIMIT = 5000
+
+/**
+ * `{ count, totalAmount }` of a category's sales: from categoryStats when the
+ * user's category counts are ready, else a bounded scan. The scan is exact up
+ * to CATEGORY_SUMMARY_SCAN_LIMIT sales; above that it returns the sums of the
+ * first LIMIT sales and `capped: true` (a lower bound — the UI may show
+ * "5000+"). Old clients ignore the extra optional field.
+ * A missing or another user's categoryId yields zeros.
+ */
+export const getCategorySummary = authedQuery({
+  args: { categoryId: v.id('categories') },
+  returns: v.object({ count: v.number(), totalAmount: v.number(), capped: v.optional(v.boolean()) }),
+  handler: async (ctx, args) => {
+    const user = ctx.user
+    if (!user) return { count: 0, totalAmount: 0 }
+    if (!(await getOwned(ctx, 'categories', args.categoryId, user._id))) {
+      return { count: 0, totalAmount: 0 }
+    }
+
+    if (await categoryStatsReady(ctx, user._id)) {
+      const row = await getCategoryStatsRow(ctx, user._id, args.categoryId)
+      return { count: row?.saleCount ?? 0, totalAmount: row?.totalAmount ?? 0 }
+    }
+
+    const rows = await ctx.db
+      .query('sales')
+      .withIndex('by_userId_categoryId', (q) =>
+        q.eq('userId', user._id).eq('categoryId', args.categoryId),
+      )
+      .take(CATEGORY_SUMMARY_SCAN_LIMIT + 1)
+    const capped = rows.length > CATEGORY_SUMMARY_SCAN_LIMIT
+    if (capped) rows.length = CATEGORY_SUMMARY_SCAN_LIMIT
+    let totalAmount = 0
+    for (const r of rows) totalAmount += safe(r.amount)
+    return capped ? { count: rows.length, totalAmount, capped } : { count: rows.length, totalAmount }
+  },
+})
+
+/**
+ * Total number of sale line items per category: from categoryStats when
+ * categoryCountsReady (and TOTALS_READS is not 'off'), else a full scan.
+ */
+export const getCountsByCategory = authedQuery({
+  args: {},
+  returns: v.array(categoryCount),
+  handler: async (ctx) => {
+    const user = ctx.user
     if (!user) return []
+
+    if (await categoryStatsReady(ctx, user._id)) {
+      const stats = await ctx.db
+        .query('categoryStats')
+        .withIndex('by_userId_categoryId', (q) => q.eq('userId', user._id))
+        .collect()
+      return stats
+        .filter((s) => s.saleCount > 0)
+        .map((s) => ({ categoryId: s.categoryId, count: s.saleCount }))
+    }
 
     const rows = await ctx.db
       .query('sales')
@@ -50,29 +138,30 @@ export const getCountsByCategory = query({
   },
 })
 
-/** Get all sale items for a date range */
-export const getForDateRange = query({
+/**
+ * Get all sale items for a date range.
+ * @deprecated kept for cached PWA clients; remove after 2026-12-17 (not called by the current frontend).
+ */
+export const getForDateRange = authedQuery({
   args: {
-    startDate:    v.number(),
-    endDate:      v.number(),
-    viewAsUserId: v.optional(v.id('users')),
+    startDate: v.number(),
+    endDate:   v.number(),
   },
+  returns: v.array(saleDoc),
   handler: async (ctx, args) => {
-    const user = await resolveDataUser(ctx, args.viewAsUserId)
+    const user = ctx.user
     if (!user) return []
     return ctx.db
       .query('sales')
       .withIndex('by_userId_saleDate', (q) =>
-        q.eq('userId', user._id)
-          .gte('saleDate', args.startDate)
-          .lte('saleDate', args.endDate)
+        q.eq('userId', user._id).gte('saleDate', args.startDate).lte('saleDate', args.endDate),
       )
       .collect()
   },
 })
 
-/** Update a sale item; also adjusts the parent session's totalAmount */
-export const updateItem = mutation({
+/** Update a sale item; also adjusts the parent session's totalAmount (or moves it to another day) */
+export const updateItem = authedMutation({
   args: {
     saleId:      v.id('sales'),
     productName: v.string(),
@@ -81,107 +170,19 @@ export const updateItem = mutation({
     note:        v.optional(v.string()),
     saleDate:    v.optional(v.number()),
   },
+  returns: v.null(),
   handler: async (ctx, args) => {
-    const user = await requireUser(ctx)
-    if (!user) throw new ConvexError('User not found — please sign in again')
-
-    const sale = await ctx.db.get(args.saleId)
-    if (!sale || sale.userId !== user._id) throw new ConvexError('Sale not found')
-
-    const dateChanged =
-      args.saleDate !== undefined && args.saleDate !== sale.saleDate
-
-    if (dateChanged) {
-      const newDate = args.saleDate!
-      const oldSession = await ctx.db.get(sale.sessionId)
-      if (oldSession) {
-        const newCount = oldSession.itemCount - 1
-        if (newCount <= 0) {
-          await ctx.db.delete(sale.sessionId)
-        } else {
-          await ctx.db.patch(sale.sessionId, {
-            totalAmount: Math.max(0, oldSession.totalAmount - sale.amount),
-            itemCount:   newCount,
-          })
-        }
-      }
-
-      const targetSession = await ctx.db
-        .query('saleSessions')
-        .withIndex('by_userId_sessionDate', (q) =>
-          q.eq('userId', user._id).eq('sessionDate', newDate),
-        )
-        .first()
-
-      let newSessionId: Id<'saleSessions'>
-      if (targetSession) {
-        newSessionId = targetSession._id
-        await ctx.db.patch(newSessionId, {
-          totalAmount: targetSession.totalAmount + args.amount,
-          itemCount:   targetSession.itemCount + 1,
-        })
-      } else {
-        newSessionId = await ctx.db.insert('saleSessions', {
-          userId:      user._id,
-          totalAmount: args.amount,
-          itemCount:   1,
-          sessionDate: newDate,
-          createdAt:   Date.now(),
-        })
-      }
-
-      await ctx.db.patch(args.saleId, {
-        productName: args.productName.trim(),
-        amount:      args.amount,
-        categoryId:  args.categoryId,
-        note:        args.note,
-        sessionId:   newSessionId,
-        saleDate:    newDate,
-      })
-      return
-    }
-
-    const diff = args.amount - sale.amount
-
-    await ctx.db.patch(args.saleId, {
-      productName: args.productName.trim(),
-      amount:      args.amount,
-      categoryId:  args.categoryId,
-      note:        args.note,
-    })
-
-    const session = await ctx.db.get(sale.sessionId)
-    if (session) {
-      await ctx.db.patch(sale.sessionId, {
-        totalAmount: Math.max(0, session.totalAmount + diff),
-      })
-    }
+    await updateSaleItem(ctx, ctx.user._id, args)
+    return null
   },
 })
 
 /** Delete a sale item; also updates or removes the parent session */
-export const removeItem = mutation({
+export const removeItem = authedMutation({
   args: { saleId: v.id('sales') },
+  returns: v.null(),
   handler: async (ctx, args) => {
-    const user = await requireUser(ctx)
-    if (!user) throw new ConvexError('User not found — please sign in again')
-
-    const sale = await ctx.db.get(args.saleId)
-    if (!sale || sale.userId !== user._id) throw new ConvexError('Sale not found')
-
-    await ctx.db.delete(args.saleId)
-
-    const session = await ctx.db.get(sale.sessionId)
-    if (session) {
-      const newCount = session.itemCount - 1
-      if (newCount <= 0) {
-        await ctx.db.delete(sale.sessionId)
-      } else {
-        await ctx.db.patch(sale.sessionId, {
-          totalAmount: Math.max(0, session.totalAmount - sale.amount),
-          itemCount:   newCount,
-        })
-      }
-    }
+    await removeSaleItem(ctx, ctx.user._id, args.saleId)
+    return null
   },
 })

@@ -9,6 +9,10 @@ import type { AuthConfig } from 'convex/server'
 export default {
   providers: [
     {
+      // Convex evaluates auth.config.ts at push time and the documented Clerk
+      // setup reads the issuer from process.env; the typed `env` export needs
+      // codegen we don't run here, so keep the conventional form.
+      // eslint-disable-next-line @convex-dev/no-process-env
       domain: process.env.CLERK_JWT_ISSUER_DOMAIN!,
       applicationID: 'convex',
     },

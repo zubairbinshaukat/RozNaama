@@ -1,12 +1,20 @@
-import { ConvexError, v } from 'convex/values'
-import { mutation, query } from './_generated/server'
-import { requireUser, resolveDataUser } from './authHelpers'
+import { v } from 'convex/values'
+import { internalMutation } from './_generated/server'
+import { authedMutation, authedQuery } from './lib/functions'
+import { categoryDoc } from './lib/returnValidators'
+import {
+  createCategory,
+  removeCategory,
+  unlinkCategoryBatch,
+  updateCategory,
+} from './model/categories'
 
-/** List all categories for the current user */
-export const list = query({
-  args: { viewAsUserId: v.optional(v.id('users')) },
-  handler: async (ctx, args) => {
-    const user = await resolveDataUser(ctx, args.viewAsUserId)
+/** List all categories for the current user (small per user, so collect is fine) */
+export const list = authedQuery({
+  args: {},
+  returns: v.array(categoryDoc),
+  handler: async (ctx) => {
+    const user = ctx.user
     if (!user) return []
     return ctx.db
       .query('categories')
@@ -16,40 +24,41 @@ export const list = query({
 })
 
 /** Create a new category */
-export const create = mutation({
+export const create = authedMutation({
   args: { name: v.string(), color: v.string() },
-  handler: async (ctx, args) => {
-    const user = await requireUser(ctx)
-    if (!user) throw new ConvexError('User not found — please sign in again')
-    return ctx.db.insert('categories', {
-      userId:    user._id,
-      name:      args.name.trim(),
-      color:     args.color,
-      createdAt: Date.now(),
-    })
-  },
+  returns: v.id('categories'),
+  handler: async (ctx, args) => createCategory(ctx, ctx.user._id, args),
 })
 
 /** Update a category's name and color */
-export const update = mutation({
+export const update = authedMutation({
   args: { categoryId: v.id('categories'), name: v.string(), color: v.string() },
+  returns: v.null(),
   handler: async (ctx, args) => {
-    const user = await requireUser(ctx)
-    if (!user) throw new ConvexError('User not found — please sign in again')
-    const cat = await ctx.db.get(args.categoryId)
-    if (!cat || cat.userId !== user._id) throw new ConvexError('Category not found')
-    await ctx.db.patch(args.categoryId, { name: args.name.trim(), color: args.color })
+    await updateCategory(ctx, ctx.user._id, args.categoryId, {
+      name:  args.name,
+      color: args.color,
+    })
+    return null
   },
 })
 
 /** Remove a category owned by the current user */
-export const remove = mutation({
+export const remove = authedMutation({
   args: { categoryId: v.id('categories') },
+  returns: v.null(),
   handler: async (ctx, args) => {
-    const user = await requireUser(ctx)
-    if (!user) throw new ConvexError('User not found — please sign in again')
-    const cat = await ctx.db.get(args.categoryId)
-    if (!cat || cat.userId !== user._id) throw new ConvexError('Category not found')
-    await ctx.db.delete(args.categoryId)
+    await removeCategory(ctx, ctx.user._id, args.categoryId)
+    return null
   },
+})
+
+/**
+ * Continuation of `remove` (and of the orphan migration): unlink the next
+ * batch of sales from a deleted category; reschedules itself until done.
+ */
+export const unlinkBatch = internalMutation({
+  args: { userId: v.id('users'), categoryId: v.id('categories') },
+  returns: v.number(),
+  handler: async (ctx, args) => unlinkCategoryBatch(ctx, args.userId, args.categoryId),
 })

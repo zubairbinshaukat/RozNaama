@@ -1,43 +1,42 @@
-import { ConvexError, v } from 'convex/values'
-import { mutation, query } from './_generated/server'
+import { v } from 'convex/values'
 import { paginationOptsValidator } from 'convex/server'
-import { requireUser, resolveDataUser } from './authHelpers'
+import { authedMutation, authedQuery } from './lib/functions'
+import { expenseDoc, paginated } from './lib/returnValidators'
+import { recordExpense, removeExpense, updateExpense } from './model/expenses'
 
-/** Atomically record an expense entry for a specific date */
-export const record = mutation({
+const EMPTY_PAGE = { page: [], isDone: true, continueCursor: '' }
+
+/**
+ * Atomically record an expense entry for a specific date.
+ * Optional `clientRequestId` (offline outbox): a replay of the same id returns
+ * the first result and writes nothing.
+ */
+export const record = authedMutation({
   args: {
-    amount:      v.number(),
-    expenseDate: v.number(),
-    note:        v.optional(v.string()),
+    amount:          v.number(),
+    expenseDate:     v.number(),
+    note:            v.optional(v.string()),
+    clientRequestId: v.optional(v.string()),
   },
-  handler: async (ctx, args) => {
-    const user = await requireUser(ctx)
-    if (!user) throw new ConvexError('User not found — please sign in again')
-    if (args.amount <= 0) throw new ConvexError('Expense amount must be greater than 0')
-
-    const now = Date.now()
-
-    const expenseId = await ctx.db.insert('expenses', {
-      userId:      user._id,
-      amount:      args.amount,
-      note:        args.note?.trim() || undefined,
-      expenseDate: args.expenseDate,
-      createdAt:   now,
-    })
-
-    return { expenseId, amount: args.amount }
-  },
+  returns: v.object({
+    expenseId: v.id('expenses'),
+    amount:    v.number(),
+  }),
+  handler: async (ctx, args) => recordExpense(ctx, ctx.user._id, args),
 })
 
-/** Get all expenses for a date range (used for per-day dashboard list) */
-export const getForRange = query({
+/**
+ * Get all expenses for a date range (old per-day dashboard list).
+ * @deprecated kept for cached PWA clients; remove after 2026-12-17 (new UI uses saleSessions.getDayFeed).
+ */
+export const getForRange = authedQuery({
   args: {
-    startDate:    v.number(),
-    endDate:      v.number(),
-    viewAsUserId: v.optional(v.id('users')),
+    startDate: v.number(),
+    endDate:   v.number(),
   },
+  returns: v.array(expenseDoc),
   handler: async (ctx, args) => {
-    const user = await resolveDataUser(ctx, args.viewAsUserId)
+    const user = ctx.user
     if (!user) return []
 
     return ctx.db
@@ -51,15 +50,18 @@ export const getForRange = query({
   },
 })
 
-/** Get all-time expenses in descending date order (paginated). */
-export const getPaginated = query({
+/**
+ * Get all-time expenses in descending date order (paginated).
+ * @deprecated kept for cached PWA clients; remove after 2026-12-17 (new UI uses saleSessions.getDayFeed).
+ */
+export const getPaginated = authedQuery({
   args: {
     paginationOpts: paginationOptsValidator,
-    viewAsUserId:   v.optional(v.id('users')),
   },
+  returns: paginated(expenseDoc),
   handler: async (ctx, args) => {
-    const user = await resolveDataUser(ctx, args.viewAsUserId)
-    if (!user) return { page: [], isDone: true, continueCursor: '' }
+    const user = ctx.user
+    if (!user) return EMPTY_PAGE
 
     return ctx.db
       .query('expenses')
@@ -69,17 +71,20 @@ export const getPaginated = query({
   },
 })
 
-/** Get expenses in descending date order for a date range (paginated). */
-export const getForRangePaginated = query({
+/**
+ * Get expenses in descending date order for a date range (paginated).
+ * @deprecated kept for cached PWA clients; remove after 2026-12-17 (new UI uses saleSessions.getDayFeed).
+ */
+export const getForRangePaginated = authedQuery({
   args: {
     startDate:      v.number(),
     endDate:        v.number(),
     paginationOpts: paginationOptsValidator,
-    viewAsUserId:   v.optional(v.id('users')),
   },
+  returns: paginated(expenseDoc),
   handler: async (ctx, args) => {
-    const user = await resolveDataUser(ctx, args.viewAsUserId)
-    if (!user) return { page: [], isDone: true, continueCursor: '' }
+    const user = ctx.user
+    if (!user) return EMPTY_PAGE
 
     return ctx.db
       .query('expenses')
@@ -92,38 +97,28 @@ export const getForRangePaginated = query({
 })
 
 /** Update one expense entry */
-export const updateItem = mutation({
+export const updateItem = authedMutation({
   args: {
     expenseId: v.id('expenses'),
     amount:    v.number(),
     note:      v.optional(v.string()),
   },
+  returns: v.null(),
   handler: async (ctx, args) => {
-    const user = await requireUser(ctx)
-    if (!user) throw new ConvexError('User not found — please sign in again')
-    if (args.amount <= 0) throw new ConvexError('Expense amount must be greater than 0')
-
-    const expense = await ctx.db.get(args.expenseId)
-    if (!expense || expense.userId !== user._id) throw new ConvexError('Expense not found')
-
-    await ctx.db.patch(args.expenseId, {
+    await updateExpense(ctx, ctx.user._id, args.expenseId, {
       amount: args.amount,
-      note:   args.note?.trim() || undefined,
+      note:   args.note,
     })
+    return null
   },
 })
 
 /** Delete one expense entry */
-export const removeItem = mutation({
+export const removeItem = authedMutation({
   args: { expenseId: v.id('expenses') },
+  returns: v.null(),
   handler: async (ctx, args) => {
-    const user = await requireUser(ctx)
-    if (!user) throw new ConvexError('User not found — please sign in again')
-
-    const expense = await ctx.db.get(args.expenseId)
-    if (!expense || expense.userId !== user._id) throw new ConvexError('Expense not found')
-
-    await ctx.db.delete(args.expenseId)
+    await removeExpense(ctx, ctx.user._id, args.expenseId)
+    return null
   },
 })
-
