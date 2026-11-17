@@ -124,7 +124,7 @@ describe('zonedStartOfDayMs in zones where midnight does not exist (DST gap at 0
         expect(r.before < key, `${tz} ${key}`).toBe(true)
       }
     }
-  })
+  }, 30_000) // ~2,200 Intl-heavy checks; slow under parallel test load
 
   it('monthBounds / zonedYearStartMs use the same first-instant rule', () => {
     expect(monthBounds('2026-09', 'America/Santiago').end).toBe(zonedStartOfDayMs('2026-10-01', 'America/Santiago'))
