@@ -1,4 +1,4 @@
-import { lazy, Suspense } from 'react'
+import { lazy, Suspense, useState } from 'react'
 import { Routes, Route, Navigate, Outlet } from 'react-router-dom'
 import { MotionConfig } from 'framer-motion'
 import { ToastProvider } from '@/components/shared/Toast'
@@ -10,6 +10,9 @@ import OfflineBanner from '@/components/shared/OfflineBanner'
 import SessionWatcher from '@/components/shared/SessionWatcher'
 import { OutboxProvider, SnapshotProvider } from '@/lib/offline'
 import { useOutbox } from '@/hooks/useOutbox'
+import { KHATA_TURNED_OFF_MESSAGE, useOnKhataTurnedOff, useShopSettings } from '@/hooks/useShopSettings'
+import { useToast } from '@/components/shared/Toast'
+import ShopSettingsProvider from '@/components/shared/ShopSettingsProvider'
 
 // Route-level code splitting: each page (and what only it uses) is its own chunk,
 // so /dashboard never downloads the landing page and vice versa. All chunks are
@@ -23,6 +26,23 @@ const Dashboard  = lazy(loadDashboard)
 // kept out of the service-worker precache (vite.config.ts), so shopkeepers
 // never download it.
 const Admin      = lazy(() => import('@/pages/Admin'))
+// Advance & Udhaar: its chunk is requested only when khata is switched on.
+const Khata      = lazy(() => import('@/pages/Khata'))
+
+/** /khata only exists for shops with Advance & Udhaar on; otherwise it behaves like an unknown path. */
+function KhataRoute() {
+  const { khataOn, isLoading } = useShopSettings()
+  const { showToast } = useToast()
+  const [turnedOff, setTurnedOff] = useState(false)
+  // Switched off elsewhere (another phone / admin) while this page is open.
+  useOnKhataTurnedOff(() => {
+    setTurnedOff(true)
+    showToast(KHATA_TURNED_OFF_MESSAGE, 'info')
+  })
+  if (isLoading) return <LoadingScreen />
+  if (!khataOn) return <Navigate to={turnedOff ? '/dashboard' : '/'} replace />
+  return <Khata />
+}
 
 // Don't let the Dashboard chunk download wait behind Clerk + Convex auth:
 // on /dashboard (the PWA start_url) fetch it in parallel right away; from the
@@ -72,12 +92,15 @@ export default function App() {
               element={
                 <ProtectedRoute>
                   <ViewAsProvider>
-                    <Outlet />
+                    <ShopSettingsProvider>
+                      <Outlet />
+                    </ShopSettingsProvider>
                   </ViewAsProvider>
                 </ProtectedRoute>
               }
             >
               <Route path="/dashboard" element={<Dashboard />} />
+              <Route path="/khata" element={<KhataRoute />} />
               <Route
                 path="/admin/*"
                 element={

@@ -1,4 +1,8 @@
-import { lazy, Suspense, useState, useMemo, useId } from 'react'
+import { lazy, Suspense, useCallback, useState, useMemo, useId, useRef } from 'react'
+import KhataBadgeScope from '@/components/khata/KhataBadgeScope'
+import { badgeText, useKhataBadgeScope } from '@/components/khata/badgeContext'
+import { KHATA_TURNED_OFF_MESSAGE, useOnKhataTurnedOff, useShopSettings } from '@/hooks/useShopSettings'
+import type { KhataBadge } from '@/lib/khata'
 import { AlertCircle, ChevronDown, ChevronRight, CloudOff, ShoppingBag, Receipt, Notebook } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { cn, formatTime, toLocalDateKey } from '@/lib/utils'
@@ -97,18 +101,42 @@ function SyncBadge({ sync }: { sync: Exclude<RowSync, null> }) {
   )
 }
 
+/** Advance & Udhaar link of a sale row (khata on only). */
+function KhataChip({ badge }: { badge: KhataBadge }) {
+  const t = badgeText(badge)
+  return (
+    <span
+      className={cn(
+        'inline-flex items-center shrink-0 max-w-[60%] truncate rounded-full px-2 py-0.5 text-[12px] font-bold',
+        t.kind === 'baqi' ? 'bg-warning/15 text-warning' : 'bg-primary/10 text-primary',
+      )}
+      data-testid="khata-badge"
+    >
+      {t.kind === 'baqi' ? <>Baqi&nbsp;<Amount value={t.amount} bare /></> : t.text}
+    </span>
+  )
+}
+
+function khataLabel(badge: KhataBadge, money: (v: number) => string): string {
+  const t = badgeText(badge)
+  return t.kind === 'baqi' ? `, Baqi ${money(t.amount)}` : `, ${t.text}`
+}
+
 function SaleRow({
   item,
   categoryName,
   color,
   sync,
   onOpen,
+  badge,
 }: {
   item: SaleItem
   categoryName: string | undefined
   color: string | undefined
   sync: RowSync
   onOpen: () => void
+  /** Advance & Udhaar on: this sale belongs to a khata record. */
+  badge?: KhataBadge
 }) {
   const money = useFormatMoney()
   return (
@@ -116,7 +144,7 @@ function SaleRow({
       <button
         type="button"
         onClick={onOpen}
-        aria-label={`${item.productName}, ${money(item.amount)}${categoryName ? `, ${categoryName}` : ''}${sync ? `, ${SYNC_TEXT[sync].toLowerCase()}` : ''}. Open details`}
+        aria-label={`${item.productName}, ${money(item.amount)}${categoryName ? `, ${categoryName}` : ''}${badge ? khataLabel(badge, money) : ''}${sync ? `, ${SYNC_TEXT[sync].toLowerCase()}` : ''}. Open details`}
         className="w-full flex items-center gap-3 min-h-15 px-3 py-2.5 rounded-2xl text-left hover:bg-muted/60 active:scale-[0.97] transition-all duration-150"
       >
         <span
@@ -129,6 +157,7 @@ function SaleRow({
         <span className="flex-1 min-w-0">
           <span className="block text-base font-semibold text-foreground truncate">{item.productName}</span>
           <span className="flex items-center gap-1.5 min-w-0 text-[13px] text-muted-foreground">
+            {badge && <KhataChip badge={badge} />}
             {sync && <SyncBadge sync={sync} />}
             <span className="truncate">
               {sync ? '· ' : ''}
@@ -217,6 +246,7 @@ function DayCard({
   const { getEntry } = useOutbox()
   const canEdit = useCanEditOnline()
   const live = useLiveQueriesEnabled()
+  const khata = useKhataBadgeScope()
 
   const categoryById = useMemo(() => new Map(categories.map((c) => [c._id as string, c])), [categories])
 
@@ -329,6 +359,7 @@ function DayCard({
                       {group.items.map((item) => {
                         const sync = syncOf(item._id)
                         const cat = item.categoryId ? categoryById.get(item.categoryId) : undefined
+                        const badge = sync ? undefined : khata?.badges.get(item.sessionId)
                         return (
                           <SaleRow
                             key={item._id}
@@ -338,7 +369,12 @@ function DayCard({
                               : cat?.name}
                             color={cat?.color}
                             sync={sync}
-                            onOpen={() => (sync ? setPendingRowId(item._id) : setDetailItem(item))}
+                            {...(badge ? { badge } : {})}
+                            onOpen={() => (sync
+                              ? setPendingRowId(item._id)
+                              : badge && khata
+                                ? khata.open(badge, () => setDetailItem(item))
+                                : setDetailItem(item))}
                           />
                         )
                       })}
@@ -447,6 +483,16 @@ interface SalesListProps {
 export default function SalesList({ days, categories, expandAll = false }: SalesListProps) {
   const readOnly = useIsViewingOtherSafe()
   const todayKey = useMemo(() => getTodayKey(), [])
+  const { khataOn } = useShopSettings()
+  const dateKeys = useMemo(() => days.map((d) => d.dateKey), [days])
+  const khataSheetOpen = useRef(false)
+  const { showToast } = useToast()
+  // Switched off elsewhere while a khata customer sheet is open: it closes (scope unmounts).
+  useOnKhataTurnedOff(() => {
+    if (khataSheetOpen.current) showToast(KHATA_TURNED_OFF_MESSAGE, 'info')
+    khataSheetOpen.current = false
+  })
+  const onKhataSheet = useCallback((open: boolean) => { khataSheetOpen.current = open }, [])
 
   if (days.length === 0) {
     return (
@@ -458,7 +504,7 @@ export default function SalesList({ days, categories, expandAll = false }: Sales
     )
   }
 
-  return (
+  const list = (
     <div className="flex flex-col gap-3">
       {days.map((group) => (
         <DayCard
@@ -471,4 +517,7 @@ export default function SalesList({ days, categories, expandAll = false }: Sales
       ))}
     </div>
   )
+  return khataOn
+    ? <KhataBadgeScope dateKeys={dateKeys} onSheetOpenChange={onKhataSheet}>{list}</KhataBadgeScope>
+    : list
 }

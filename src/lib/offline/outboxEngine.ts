@@ -19,6 +19,7 @@ import { createInTabLocks, createNoopBroadcast, type BroadcastLike, type LocksLi
 import type { OutboxStore } from './outboxStore'
 import {
   parseOutboxEntry,
+  SEND_RESULT_KINDS,
   type OutboxEntry,
   type OutboxProblem,
   type SendResult,
@@ -68,7 +69,7 @@ const tabInFlight = new Map<string, Promise<unknown>>()
 function isSendResult(value: unknown): value is SendResult {
   if (typeof value !== 'object' || value === null) return false
   const v = value as { kind?: unknown; result?: unknown }
-  return (v.kind === 'sale' || v.kind === 'expense') && typeof v.result === 'object' && v.result !== null
+  return typeof v.kind === 'string' && SEND_RESULT_KINDS.includes(v.kind) && typeof v.result === 'object' && v.result !== null
 }
 
 export class OutboxEngine {
@@ -322,7 +323,7 @@ export class OutboxEngine {
       this.opts.broadcast.post({ type: 'sent', owner: this.opts.owner, id: entry.id, result })
       return true
     } catch (err) {
-      return this.handleFailure(entry, classifyError(err))
+      return this.handleFailure(entry, classifyError(err, entry.kind))
     } finally {
       this.opts.inFlight.delete(entry.id)
       this.setState({ sendingIds: this.state.sendingIds.filter((id) => id !== entry.id) })

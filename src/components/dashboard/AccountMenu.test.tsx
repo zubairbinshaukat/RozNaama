@@ -2,6 +2,8 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import AccountMenu from './AccountMenu'
+import { ShopSettingsContext } from '@/hooks/useShopSettings'
+import { DEFAULT_SHOP_SETTINGS } from '@/lib/khata'
 
 const signOut = vi.fn(async () => {})
 const openUserProfile = vi.fn()
@@ -106,5 +108,20 @@ describe('AccountMenu admin entry', () => {
     const sheet = screen.getByRole('dialog', { name: 'Ali Khan' })
     fireEvent.click(within(sheet).getByRole('button', { name: /admin dashboard/i }))
     expect(screen.getByText('admin page')).toBeTruthy()
+  })
+})
+
+describe('AccountMenu settings', () => {
+  it('has no Settings row outside the signed-in app', () => {
+    const sheet = openMenu()
+    expect(within(sheet).queryByRole('button', { name: /^Settings$/ })).toBeNull()
+  })
+
+  it('shows Settings inside the app (khata on or off)', () => {
+    const value = { settings: DEFAULT_SHOP_SETTINGS, isLoading: false, khataOn: false, isLive: true, viewAsUserId: undefined }
+    render(<ShopSettingsContext.Provider value={value}><AccountMenu /></ShopSettingsContext.Provider>)
+    fireEvent.click(screen.getByRole('button', { name: /^Account/ }))
+    const sheet = screen.getByRole('dialog', { name: 'Ali Khan' })
+    expect(within(sheet).getByRole('button', { name: /^Settings$/ })).toBeTruthy()
   })
 })

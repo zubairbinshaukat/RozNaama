@@ -1,5 +1,5 @@
 import { lazy, Suspense, useState, useEffect, useRef, useCallback, useMemo } from 'react'
-import { TrendingUp, Download, Eye, ArrowLeft } from 'lucide-react'
+import { TrendingUp, Download, Eye, ArrowLeft, BookOpen } from 'lucide-react'
 import { useUser } from '@clerk/clerk-react'
 import { Link } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
@@ -33,6 +33,7 @@ import { useHorizontalTabSwipe } from '@/hooks/useHorizontalTabSwipe'
 import { useMediaQueryMatch } from '@/hooks/useMediaQueryMatch'
 import { OFFLINE_EDIT_MESSAGE, useCanEditOnline } from '@/hooks/useCanEditOnline'
 import { readLastUserHint } from '@/lib/userHints'
+import { KHATA_TURNED_OFF_MESSAGE, useOnKhataTurnedOff, useShopSettings } from '@/hooks/useShopSettings'
 
 // ── Code splitting ──────────────────────────────────────────────────────────
 // Recharts views and secondary sheets are separate chunks, so the first load
@@ -49,6 +50,10 @@ const AddCategoryModal      = lazy(() => import('@/components/modals/AddCategory
 const ManageCategoriesModal = lazy(() => import('@/components/modals/ManageCategoriesModal'))
 const IOSInstallModal       = lazy(() => import('@/components/modals/IOSInstallModal'))
 const AdminAccessDialog     = lazy(() => import('@/components/dashboard/AdminAccessDialog'))
+// Advance & Udhaar (only requested when it is switched on).
+const KhataPeriodLine       = lazy(() => import('@/components/khata/KhataPeriodLine'))
+const AdvanceSheet          = lazy(() => import('@/components/khata/AdvanceSheet'))
+const ReceivePaymentFlow    = lazy(() => import('@/components/khata/ReceivePaymentFlow'))
 
 /** The two everyday sheets: fetch them once the dashboard is idle, so the first tap is instant. */
 function usePrefetchEntrySheets() {
@@ -175,6 +180,8 @@ export default function Dashboard() {
   const [showExpenseModal,      setShowExpenseModal]      = useState(false)
   const [showManageCategoriesModal, setShowManageCategoriesModal] = useState(false)
   const [showIOSInstallModal,   setShowIOSInstallModal]   = useState(false)
+  /** Advance & Udhaar sheets (FAB). */
+  const [khataSheet,            setKhataSheet]            = useState<'advance' | 'payment' | null>(null)
   /** Selected day / week / month / year per view: kept while switching tabs, reset on reopen. */
   const [periodSelection,       setPeriodSelection]       = useState<PeriodSelection>(CURRENT_SELECTION)
   const period = resolveSelection(periodSelection)
@@ -185,6 +192,12 @@ export default function Dashboard() {
   const { isViewingOther, viewAsName, viewAsUserId, handleViewAsInvalid, clearViewAs, isAdmin } = useViewAs()
   const { showToast } = useToast()
   const canEditOnline = useCanEditOnline()
+  const { khataOn } = useShopSettings()
+  // Switched off elsewhere (another phone / admin) while a khata sheet is open.
+  useOnKhataTurnedOff(() => {
+    if (khataSheet) showToast(KHATA_TURNED_OFF_MESSAGE, 'info')
+    setKhataSheet(null)
+  })
   usePrefetchEntrySheets()
   const tabSwipeRef = useRef<HTMLDivElement>(null)
   const mobileLayout = useMediaQueryMatch('(max-width: 639px)')
@@ -263,6 +276,16 @@ export default function Dashboard() {
             </Link>
 
             <div className="flex items-center gap-1.5 ml-auto">
+              {khataOn && (
+                <Link
+                  to="/khata"
+                  aria-label="Khata (Udhaar and Advance)"
+                  title="Khata"
+                  className="w-11 h-11 flex items-center justify-center rounded-full text-muted-foreground hover:text-foreground hover:bg-muted active:scale-[0.97] transition-all"
+                >
+                  <BookOpen size={18} />
+                </Link>
+              )}
               <ThemeSwitcher />
               <AccountMenu />
             </div>
@@ -358,6 +381,11 @@ export default function Dashboard() {
                 onAddExpense={() => setShowExpenseModal(true)}
                 readOnly={isViewingOther}
               />
+              {khataOn && (
+                <Suspense fallback={null}>
+                  <KhataPeriodLine view={activeTab} value={period[activeTab]} />
+                </Suspense>
+              )}
             </QueryErrorBoundary>
           </section>
 
@@ -408,6 +436,10 @@ export default function Dashboard() {
           onAddSale={()     => setShowSaleModal(true)}
           onAddExpense={()  => setShowExpenseModal(true)}
           onManageCategories={() => setShowManageCategoriesModal(true)}
+          {...(khataOn ? {
+            onAdvance:        () => setKhataSheet('advance'),
+            onReceivePayment: () => setKhataSheet('payment'),
+          } : {})}
         />
 
         {/* ── Modals (write actions never open in read-only view-as) ─────────── */}
@@ -432,6 +464,16 @@ export default function Dashboard() {
                 setShowCategoryModal(true)
               }}
             />
+          </ModalQueryBoundary>
+        )}
+        {khataOn && !isViewingOther && khataSheet === 'advance' && (
+          <ModalQueryBoundary onClose={() => setKhataSheet(null)}>
+            <AdvanceSheet onClose={() => setKhataSheet(null)} />
+          </ModalQueryBoundary>
+        )}
+        {khataOn && !isViewingOther && khataSheet === 'payment' && (
+          <ModalQueryBoundary onClose={() => setKhataSheet(null)}>
+            <ReceivePaymentFlow onClose={() => setKhataSheet(null)} />
           </ModalQueryBoundary>
         )}
         {showIOSInstallModal && (

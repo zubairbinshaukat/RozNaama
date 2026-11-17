@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useId } from 'react'
-import { Plus, Tag, ShoppingBag, Layers, Receipt } from 'lucide-react'
+import { Plus, Tag, ShoppingBag, Layers, Receipt, Wallet, HandCoins } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 interface FABProps {
@@ -9,13 +9,19 @@ interface FABProps {
   onManageCategories: () => void
   /** When true, FAB is hidden (e.g. admin viewing another user). */
   disabled?:          boolean
+  /** Advance & Udhaar (only passed when it is on): new advance / booking. */
+  onAdvance?:         () => void
+  /** Advance & Udhaar (only passed when it is on): money received from a customer. */
+  onReceivePayment?:  () => void
 }
 
 /**
  * Floating "+" (raised in the centre of the phone tab bar; bottom-right from sm up). Opens a fan menu with
  * the record actions; the most common ones sit closest to the thumb.
  */
-export default function FAB({ onAddCategory, onAddSale, onAddExpense, onManageCategories, disabled = false }: FABProps) {
+export default function FAB({
+  onAddCategory, onAddSale, onAddExpense, onManageCategories, disabled = false, onAdvance, onReceivePayment,
+}: FABProps) {
   const [open, setOpen] = useState(false)
   const fabRef = useRef<HTMLDivElement>(null)
   const toggleRef = useRef<HTMLButtonElement>(null)
@@ -73,6 +79,9 @@ export default function FAB({ onAddCategory, onAddSale, onAddExpense, onManageCa
             {/* Same order users already know; Add Expense joins right under Add Sale */}
             <FABItem icon={<ShoppingBag size={18} />} label="Add Sale"          onClick={handle(onAddSale)}          delay="0ms"   tone="brand" itemRef={firstItemRef} />
             <FABItem icon={<Receipt size={18} />}     label="Add Expense"       onClick={handle(onAddExpense)}       delay="40ms"  tone="negative" />
+            {/* Advance & Udhaar (on): right under Add Expense */}
+            {onAdvance && <FABItem icon={<Wallet size={18} />} label="Advance / booking" onClick={handle(onAdvance)} delay="60ms" tone="khata" />}
+            {onReceivePayment && <FABItem icon={<HandCoins size={18} />} label="Receive payment" onClick={handle(onReceivePayment)} delay="70ms" tone="khata" />}
             <FABItem icon={<Tag size={18} />}         label="Add Category"      onClick={handle(onAddCategory)}      delay="80ms" />
             <FABItem icon={<Layers size={18} />}      label="Manage Categories" onClick={handle(onManageCategories)} delay="120ms" />
           </div>
@@ -104,7 +113,7 @@ function FABItem({ icon, label, onClick, delay, tone = 'neutral', itemRef }: {
   label:   string
   onClick: () => void
   delay:   string
-  tone?:   'brand' | 'negative' | 'neutral'
+  tone?:   'brand' | 'negative' | 'neutral' | 'khata'
   itemRef?: React.Ref<HTMLButtonElement>
 }) {
   return (
@@ -127,6 +136,7 @@ function FABItem({ icon, label, onClick, delay, tone = 'neutral', itemRef }: {
           tone === 'brand' && 'bg-gradient-brand text-brand-foreground',
           tone === 'negative' && 'bg-negative/12 text-negative',
           tone === 'neutral' && 'bg-primary/10 text-primary',
+          tone === 'khata' && 'bg-warning/15 text-warning',
         )}
         aria-hidden
       >

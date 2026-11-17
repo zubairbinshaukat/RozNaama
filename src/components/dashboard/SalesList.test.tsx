@@ -5,9 +5,11 @@ import { DashboardActionsContext } from '@/context/dashboardActions'
 import { AmountVisibilityContext } from '@/context/amountVisibility'
 import { pendingEntryIdOf } from '@/lib/offline/overlay'
 import { expenseEntry, saleEntry } from '@/lib/offline/testUtils'
-import type { OutboxEntry } from '@/lib/offline/types'
+import type { ExpenseOutboxEntry, OutboxEntry, SaleOutboxEntry } from '@/lib/offline/types'
 import type { DayGroup } from '@/lib/dayGroups'
 import type { Id } from '../../../convex/_generated/dataModel'
+import { ShopSettingsContext } from '@/hooks/useShopSettings'
+import { DEFAULT_SHOP_SETTINGS } from '@/lib/khata'
 
 const viewAs = { readOnly: false }
 const net = { offline: false }
@@ -43,6 +45,15 @@ vi.mock('@/hooks/useOutbox', () => ({
     }
   },
 }))
+
+const khataBadges = vi.hoisted(() => ({ map: new Map<string, unknown>() }))
+vi.mock('@/hooks/useKhata', () => ({
+  useKhataBadges: () => khataBadges.map,
+  useCustomerDetail: () => undefined,
+  usePendingKhata: () => [],
+  useKhataActions: () => ({}),
+}))
+vi.mock('@clerk/clerk-react', () => ({ useUser: () => ({ user: null }) }))
 
 vi.mock('@/hooks/useSales', () => ({
   useDeleteSaleItem: () => vi.fn(),
@@ -240,7 +251,7 @@ describe('SalesList offline: edits are blocked', () => {
 describe('SalesList pending (not yet synced) rows', () => {
   const CATS = [{ _id: 'cat_live' as Id<'categories'>, userId: USER, name: 'Snacks', color: '#22c55e', createdAt: 1 }]
 
-  function pendingDay(entry: OutboxEntry): DayGroup {
+  function pendingDay(entry: SaleOutboxEntry | ExpenseOutboxEntry): DayGroup {
     const base = day({ items: [], expenses: [], saleCount: 0, expenseCount: 0 })
     if (entry.kind === 'sale') {
       return {
@@ -333,5 +344,42 @@ describe('SalesList pending (not yet synced) rows', () => {
     fireEvent.click(within(sheet).getByRole('button', { name: 'Save without category' }))
     await waitFor(() => expect(outbox.fixWithoutCategory).toHaveBeenCalledWith('ent-4'))
     expect(within(sheet).queryByRole('button', { name: 'Save for today' })).toBeNull()
+  })
+})
+
+describe('SalesList with Advance & Udhaar on', () => {
+  const ON = {
+    settings: { ...DEFAULT_SHOP_SETTINGS, khataEnabled: true }, isLoading: false, khataOn: true, isLive: true, viewAsUserId: undefined,
+  }
+
+  it('shows "Baqi 3,000" on a linked sale and opens the customer sheet', async () => {
+    khataBadges.map = new Map([['ss1', {
+      saleSessionId: 'ss1', role: 'delivery', entryId: 'k1', customerId: 'c1', kind: 'udhaar', status: 'due',
+      remaining: 3000, customerName: 'Ali',
+    }]])
+    render(
+      <ShopSettingsContext.Provider value={ON}>
+        <SalesList days={[day()]} categories={[]} expandAll />
+      </ShopSettingsContext.Provider>,
+    )
+    const row = screen.getByRole('button', { name: /^Chai, PKR 1,500, Baqi PKR 3,000/ })
+    expect(within(row).getByTestId('khata-badge').textContent).toBe('Baqi\u00a03,000')
+    fireEvent.click(row)
+    expect(await screen.findByRole('dialog', { name: 'Customer' })).toBeTruthy()
+    expect(screen.queryByRole('dialog', { name: 'Chai' })).toBeNull()
+  })
+
+  it('payment sessions say "Received · Ali"; unlinked rows are unchanged', () => {
+    khataBadges.map = new Map([['ss1', {
+      saleSessionId: 'ss1', role: 'payment', entryId: 'k1', customerId: 'c1', kind: 'advance', status: 'booked',
+      remaining: null, customerName: 'Ali',
+    }]])
+    render(
+      <ShopSettingsContext.Provider value={ON}>
+        <SalesList days={[day()]} categories={[]} expandAll />
+      </ShopSettingsContext.Provider>,
+    )
+    expect(screen.getByTestId('khata-badge').textContent).toBe('Received · Ali')
+    khataBadges.map = new Map()
   })
 })

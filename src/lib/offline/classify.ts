@@ -2,7 +2,7 @@
  * Outbox error classification and retry timing (pure).
  */
 import { ERROR_CODES, getErrorCode, getErrorMessage } from '@/lib/errors'
-import type { OutboxProblemReason } from './types'
+import type { EntryKind, OutboxProblemReason } from './types'
 
 export type ErrorAction =
   /** Entry → needsAttention; the user fixes or discards it. */
@@ -34,7 +34,12 @@ export function isMissingClientRequestIdSupport(err: unknown): boolean {
   return /ArgumentValidationError/i.test(msg) && /extra field\W+clientRequestId/.test(msg)
 }
 
-export function classifyError(err: unknown): ErrorAction {
+/**
+ * `kind` = the outbox entry kind. Khata entries keep the server's NOT_FOUND
+ * text ("This record was cancelled", "Record not found") unless it is about a
+ * deleted category, which gets the usual "Save it without a category?".
+ */
+export function classifyError(err: unknown, kind?: EntryKind): ErrorAction {
   const code = getErrorCode(err)
   if (code === null) {
     if (isMissingClientRequestIdSupport(err)) {
@@ -53,6 +58,9 @@ export function classifyError(err: unknown): ErrorAction {
       if (/future/i.test(message)) return { action: 'needsAttention', reason: 'clock', message: CLOCK_MESSAGE }
       return { action: 'needsAttention', reason: 'validation', message }
     case ERROR_CODES.NOT_FOUND:
+      if (kind !== undefined && kind !== 'sale' && kind !== 'expense' && !/category/i.test(message)) {
+        return { action: 'needsAttention', reason: 'notFound', message }
+      }
       return { action: 'needsAttention', reason: 'notFound', message: NOT_FOUND_MESSAGE }
     case ERROR_CODES.UNAUTHORIZED:
     case ERROR_CODES.USER_NOT_FOUND:

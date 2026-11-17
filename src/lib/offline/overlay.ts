@@ -13,7 +13,7 @@ import type { DayFeedEntry } from '@/hooks/useDayFeed'
 import type { DailyTotal, DashboardStats, SaleItem, YearlyMonthlyTotal } from '@/hooks/useSales'
 import type { ExpenseEntry } from '@/hooks/useExpenses'
 import type { StatsRanges } from '@/lib/period'
-import { entryDateMs, entryExpenseTotal, entrySalesTotal, type OutboxEntry } from './types'
+import { entryDateMs, entryExpenseTotal, entryOverlayItems, entrySalesTotal, type OutboxEntry } from './types'
 
 export const PENDING_ID_PREFIX = 'pending:'
 
@@ -35,9 +35,10 @@ const PENDING_USER = `${PENDING_ID_PREFIX}user` as Id<'users'>
 type DaySession = DayFeedEntry['sessions'][number]
 type DayExpense = DayFeedEntry['expenses'][number]
 
-function pendingSession(entry: OutboxEntry & { kind: 'sale' }): DaySession {
+function pendingSession(entry: OutboxEntry): DaySession {
   const sessionId = `${PENDING_ID_PREFIX}${entry.id}` as Id<'saleSessions'>
-  const items: SaleItem[] = entry.args.items.map((item, i) => ({
+  const sessionDate = entryDateMs(entry)
+  const items: SaleItem[] = entryOverlayItems(entry).map((item, i) => ({
     _id:         `${PENDING_ID_PREFIX}${entry.id}:${i}` as Id<'sales'>,
     userId:      PENDING_USER,
     sessionId,
@@ -45,7 +46,7 @@ function pendingSession(entry: OutboxEntry & { kind: 'sale' }): DaySession {
     productName: item.productName,
     amount:      item.amount,
     ...(item.note !== undefined ? { note: item.note } : {}),
-    saleDate:    entry.args.sessionDate,
+    saleDate:    sessionDate,
     // Keeps pending rows after server rows of the same day (sorted by createdAt).
     createdAt:   entry.createdAt,
   }))
@@ -55,7 +56,7 @@ function pendingSession(entry: OutboxEntry & { kind: 'sale' }): DaySession {
     userId:        PENDING_USER,
     totalAmount:   entrySalesTotal(entry),
     itemCount:     items.length,
-    sessionDate:   entry.args.sessionDate,
+    sessionDate,
     createdAt:     entry.createdAt,
     items:         items as DaySession['items'],
   } as DaySession
@@ -125,11 +126,13 @@ export function applyPendingToFeed(
       if (!isDone && (oldestLoaded === null || day < oldestLoaded)) continue
       target = { date: day, salesTotal: 0, expenseTotal: 0, saleCount: 0, expenseCount: 0, sessions: [], expenses: [] }
     }
-    if (entry.kind === 'sale') {
+    const saleItems = entryOverlayItems(entry).length
+    if (entry.kind !== 'expense' && saleItems === 0) continue // e.g. a 'delivery' advance: not a sale yet
+    if (entry.kind !== 'expense') {
       target = {
         ...target,
         salesTotal: target.salesTotal + entrySalesTotal(entry),
-        saleCount:  target.saleCount + entry.args.items.length,
+        saleCount:  target.saleCount + saleItems,
         sessions:   [...target.sessions, pendingSession(entry)],
       }
     } else {
@@ -169,7 +172,7 @@ export function applyPendingToStats(
     const at = entryDateMs(entry)
     const sales = entrySalesTotal(entry)
     const expense = entryExpenseTotal(entry)
-    const items = entry.kind === 'sale' ? entry.args.items.length : 0
+    const items = entryOverlayItems(entry).length
     const net = sales - expense
     if (within(at, today)) {
       next.todayTotal += sales

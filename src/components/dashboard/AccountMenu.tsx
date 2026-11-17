@@ -1,7 +1,9 @@
-import { useId, useState } from 'react'
+import { lazy, Suspense, useContext, useId, useState } from 'react'
 import { useClerk, useUser } from '@clerk/clerk-react'
 import { useNavigate } from 'react-router-dom'
-import { CloudOff, LayoutDashboard, LogOut, UserCog } from 'lucide-react'
+import { CloudOff, LayoutDashboard, LogOut, Settings, UserCog } from 'lucide-react'
+import { ShopSettingsContext } from '@/hooks/useShopSettings'
+import SheetFallback from '@/components/shared/SheetFallback'
 import Sheet, { SheetBody, SheetHeader } from '@/components/shared/Sheet'
 import ConfirmModal from '@/components/modals/ConfirmModal'
 import { useToast } from '@/components/shared/Toast'
@@ -13,6 +15,8 @@ import { getErrorMessage } from '@/lib/errors'
 import { cn } from '@/lib/utils'
 import { btnOutline, btnSecondary } from '@/lib/ui'
 import { unsyncedSignOutMessage } from '@/lib/pendingEntries'
+
+const SettingsSheet = lazy(() => import('./SettingsSheet'))
 
 /** Admins only (server-confirmed): opens /admin. Separate so non-admins never need a router here. */
 function AdminDashboardItem({ disabled, onOpen }: { disabled: boolean; onOpen: () => void }) {
@@ -46,6 +50,9 @@ export default function AccountMenu() {
   const titleId = useId()
   const [open, setOpen] = useState(false)
   const [confirming, setConfirming] = useState(false)
+  const [settingsOpen, setSettingsOpen] = useState(false)
+  /** Shop settings exist only inside the signed-in app (ShopSettingsProvider). */
+  const hasShopSettings = useContext(ShopSettingsContext) !== null
 
   const hint = user ? null : readLastUserHint()
   const name = user?.fullName?.trim() || user?.firstName || hint?.name || 'Account'
@@ -111,6 +118,18 @@ export default function AccountMenu() {
               </p>
             )}
             {isAdmin && <AdminDashboardItem disabled={!online} onOpen={() => setOpen(false)} />}
+            {hasShopSettings && (
+              <button
+                type="button"
+                onClick={() => {
+                  setOpen(false)
+                  setSettingsOpen(true)
+                }}
+                className={cn(btnOutline, 'w-full justify-start')}
+              >
+                <Settings size={18} /> Settings
+              </button>
+            )}
             <button
               type="button"
               disabled={!canUseAccount}
@@ -132,6 +151,12 @@ export default function AccountMenu() {
             </button>
           </SheetBody>
         </Sheet>
+      )}
+
+      {settingsOpen && (
+        <Suspense fallback={<SheetFallback />}>
+          <SettingsSheet onClose={() => setSettingsOpen(false)} />
+        </Suspense>
       )}
 
       {confirming && (

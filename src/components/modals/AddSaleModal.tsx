@@ -25,6 +25,19 @@ import {
   type SaleProductEntry,
 } from '@/lib/entryHistory'
 import type { Id } from '../../../convex/_generated/dataModel'
+import { KHATA_TURNED_OFF_MESSAGE, useOnKhataTurnedOff, useShopSettings } from '@/hooks/useShopSettings'
+import SalePaymentBlock from '@/components/khata/SalePaymentBlock'
+import {
+  customerArg,
+  customerProblem,
+  FULL_PAYMENT,
+  isUdhaarSale,
+  pickedName,
+  receivedValue,
+  type SalePayment,
+  type SalePaymentErrors,
+} from '@/components/khata/customer'
+import { toPaisa } from '@/lib/khata'
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -79,8 +92,18 @@ export default function AddSaleModal({ onClose }: AddSaleModalProps) {
   const [saving,   setSaving]   = useState(false)
   const [topError, setTopError] = useState<string | null>(null)
   const [saleDateMs, setSaleDateMs] = useState(() => startOfDay())
+  /** Advance & Udhaar on: Full payment received? block (never rendered when off). */
+  const [payment, setPayment] = useState<SalePayment>(FULL_PAYMENT)
+  const [paymentErrors, setPaymentErrors] = useState<SalePaymentErrors>({})
 
-  const { submitSale } = useSubmitEntry()
+  const { submitSale, submitKhataSale } = useSubmitEntry()
+  const { khataOn, settings } = useShopSettings()
+  // Switched off elsewhere while "No" was chosen: back to a normal sale.
+  useOnKhataTurnedOff(() => {
+    if (!payment.full) showToast(KHATA_TURNED_OFF_MESSAGE, 'info')
+    setPayment(FULL_PAYMENT)
+    setPaymentErrors({})
+  })
   const categories  = useCategories()
   const money       = useFormatMoney()
   const { userId, history } = useEntryHistory()
@@ -163,6 +186,16 @@ export default function AddSaleModal({ onClose }: AddSaleModalProps) {
     }
 
     setErrors(newErrors)
+    if (khataOn && !payment.full) {
+      const payErr: SalePaymentErrors = {}
+      if (valid && toPaisa(receivedValue(payment)) > toPaisa(total)) payErr.received = 'More than the total.'
+      if (isUdhaarSale(payment, total)) {
+        const problem = customerProblem(payment.customer)
+        if (problem) payErr.customer = problem
+      }
+      setPaymentErrors(payErr)
+      if (payErr.received || payErr.customer) valid = false
+    }
     if (!valid) {
       requestAnimationFrame(() => {
         formRef.current?.querySelector<HTMLElement>('[aria-invalid="true"]')?.focus()
@@ -201,11 +234,41 @@ export default function AddSaleModal({ onClose }: AddSaleModalProps) {
         note:        r.note.trim() || undefined,
       }))
 
-      const outcome = await submitSales(items, clampSaleDateToTodayMs(saleDateMs))
-      // Saved on the server or on this phone: either way the entry is kept.
-      recordSaleProducts(userId, items.map((i) => ({
+      const sessionDate = clampSaleDateToTodayMs(saleDateMs)
+      const remember = () => recordSaleProducts(userId, items.map((i) => ({
         name: i.productName, amount: i.amount, categoryId: i.categoryId,
       })))
+      if (khataOn && payment.customer && isUdhaarSale(payment, total)) {
+        const name = pickedName(payment.customer)
+        const categoryLabels = labelsFor(items, categories)
+        const udhaar = await submitKhataSale({
+          customer: customerArg(payment.customer),
+          customerName: name,
+          items: items.map((i) => ({
+            productName: i.productName,
+            amount:      i.amount,
+            ...(i.categoryId ? { categoryId: i.categoryId } : {}),
+            ...(i.note ? { note: i.note } : {}),
+          })),
+          sessionDate,
+          receivedNow: receivedValue(payment),
+          recognition: settings.udhaarRecognition,
+          ...(categoryLabels ? { categoryLabels } : {}),
+        })
+        remember()
+        if (udhaar.status === 'saved') {
+          showToast(`Saved · Baqi ${money(udhaar.result.remaining)} (${name})`, 'success')
+        } else {
+          const t = queuedToast(udhaar.problem)
+          showToast(t.message, t.type)
+        }
+        onClose()
+        return
+      }
+
+      const outcome = await submitSales(items, sessionDate)
+      // Saved on the server or on this phone: either way the entry is kept.
+      remember()
       if (outcome.status === 'saved') {
         const { itemCount, totalAmount } = outcome.result
         showToast(`Saved · ${itemCount} sale${itemCount !== 1 ? 's' : ''}, ${money(totalAmount)}`, 'success')
@@ -299,6 +362,16 @@ export default function AddSaleModal({ onClose }: AddSaleModalProps) {
             onChange={(ms) => setSaleDateMs(clampSaleDateToTodayMs(ms))}
             disabled={saving}
           />
+
+          {khataOn && (
+            <SalePaymentBlock
+              value={payment}
+              onChange={(p) => { setPayment(p); setPaymentErrors({}) }}
+              total={total}
+              errors={paymentErrors}
+              disabled={saving}
+            />
+          )}
         </SheetBody>
 
         <SheetFooter>

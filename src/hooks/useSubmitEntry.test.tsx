@@ -25,7 +25,11 @@ vi.mock('convex/react', () => ({
   },
 }))
 vi.mock('../../convex/_generated/api', () => ({
-  api: { saleSessions: { record: { _name: 'saleSessions:record' } }, expenses: { record: { _name: 'expenses:record' } } },
+  api: {
+    saleSessions: { record: { _name: 'saleSessions:record' } },
+    expenses: { record: { _name: 'expenses:record' } },
+    khata: { recordSale: { _name: 'khata:recordSale' }, openAdvance: { _name: 'khata:openAdvance' }, receivePayment: { _name: 'khata:receivePayment' } },
+  },
 }))
 vi.mock('@/lib/network', () => ({
   useNetworkStatus: () => ({ isOffline: mocks.isOffline, browserOnline: !mocks.isOffline }),

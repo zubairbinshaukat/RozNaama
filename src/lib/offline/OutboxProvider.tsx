@@ -34,12 +34,19 @@ export default function OutboxProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     configureOutboxSender(async (entry: OutboxEntry): Promise<SendResult> => {
-      if (entry.kind === 'sale') {
-        const result = await convex.mutation(api.saleSessions.record, { ...entry.args, clientRequestId: entry.id })
-        return { kind: 'sale', result }
+      const clientRequestId = entry.id
+      switch (entry.kind) {
+        case 'sale':
+          return { kind: 'sale', result: await convex.mutation(api.saleSessions.record, { ...entry.args, clientRequestId }) }
+        case 'expense':
+          return { kind: 'expense', result: await convex.mutation(api.expenses.record, { ...entry.args, clientRequestId }) }
+        case 'khataSale':
+          return { kind: 'khataSale', result: await convex.mutation(api.khata.recordSale, { ...entry.args, clientRequestId }) }
+        case 'khataAdvance':
+          return { kind: 'khataAdvance', result: await convex.mutation(api.khata.openAdvance, { ...entry.args, clientRequestId }) }
+        case 'khataPayment':
+          return { kind: 'khataPayment', result: await convex.mutation(api.khata.receivePayment, { ...entry.args, clientRequestId }) }
       }
-      const result = await convex.mutation(api.expenses.record, { ...entry.args, clientRequestId: entry.id })
-      return { kind: 'expense', result }
     })
   }, [convex])
 

@@ -23,6 +23,8 @@ export type OutboxApi = {
   fixSaveForToday:     (idOrRowId: string) => Promise<void>
   /** "Save without category": drop category ids from a sale's items. */
   fixWithoutCategory:  (idOrRowId: string) => Promise<void>
+  /** Queued payment: new amount (same clientRequestId), then sync. */
+  fixPaymentAmount:    (idOrRowId: string, amount: number) => Promise<void>
   /** Clear pause / backoff and sync now. */
   retryNow:            () => Promise<void>
   /** "Try again" for one entry: back to pending (same clientRequestId), then sync. */
@@ -37,13 +39,20 @@ export function moveEntryToToday(entry: OutboxEntry, now: number = Date.now()): 
   const today = startOfDay(new Date(now))
   const dayKey = toLocalDateKey(today)
   const tz = getClientTimeZone()
-  if (entry.kind === 'sale') return { ...entry, dayKey, tz, args: { ...entry.args, sessionDate: today } }
-  return { ...entry, dayKey, tz, args: { ...entry.args, expenseDate: today } }
+  switch (entry.kind) {
+    case 'sale':
+    case 'khataSale':
+      return { ...entry, dayKey, tz, args: { ...entry.args, sessionDate: today } } as OutboxEntry
+    case 'expense':
+      return { ...entry, dayKey, tz, args: { ...entry.args, expenseDate: today } }
+    default:
+      return { ...entry, dayKey, tz, args: { ...entry.args, receivedAt: today } } as OutboxEntry
+  }
 }
 
-/** A sale without category ids (expenses unchanged). */
+/** A sale (or Udhaar sale) without category ids (other kinds unchanged). */
 export function dropEntryCategories(entry: OutboxEntry): OutboxEntry {
-  if (entry.kind !== 'sale') return entry
+  if (entry.kind !== 'sale' && entry.kind !== 'khataSale') return entry
   const { categoryLabels: _labels, ...rest } = entry
   void _labels
   return {
@@ -55,7 +64,17 @@ export function dropEntryCategories(entry: OutboxEntry): OutboxEntry {
         return item
       }),
     },
-  }
+  } as OutboxEntry
+}
+
+/**
+ * "Change amount" for a queued payment (e.g. after "More than Baqi"): new
+ * amount, sales overlay (`countedAmount`) scaled to match. Other kinds unchanged.
+ */
+export function changePaymentAmount(entry: OutboxEntry, amount: number): OutboxEntry {
+  if (entry.kind !== 'khataPayment') return entry
+  const counted = entry.khata.countedAmount > 0 ? amount : 0
+  return { ...entry, args: { ...entry.args, amount }, khata: { ...entry.khata, countedAmount: counted } }
 }
 
 /** Offline outbox for the current user (empty outside OutboxProvider). */
@@ -81,6 +100,10 @@ export function useOutbox(): OutboxApi {
     (id: string) => (engine ? engine.update(resolveId(id), dropEntryCategories) : noEngine()),
     [engine, noEngine],
   )
+  const fixPaymentAmount = useCallback(
+    (id: string, amount: number) => (engine ? engine.update(resolveId(id), (e) => changePaymentAmount(e, amount)) : noEngine()),
+    [engine, noEngine],
+  )
   const retryNow = useCallback(() => (engine ? engine.retryNow() : Promise.resolve()), [engine])
   const retryEntry = useCallback(
     (id: string) => (engine ? engine.update(resolveId(id), (e) => e) : noEngine()),
@@ -101,9 +124,10 @@ export function useOutbox(): OutboxApi {
       discard,
       fixSaveForToday,
       fixWithoutCategory,
+      fixPaymentAmount,
       retryNow,
       retryEntry,
     }),
-    [entries, state, ctx, isSending, getEntry, discard, fixSaveForToday, fixWithoutCategory, retryNow, retryEntry],
+    [entries, state, ctx, isSending, getEntry, discard, fixSaveForToday, fixWithoutCategory, fixPaymentAmount, retryNow, retryEntry],
   )
 }
