@@ -13,6 +13,8 @@ interface FABProps {
   onAdvance?:         () => void
   /** Advance & Udhaar (only passed when it is on): money received from a customer. */
   onReceivePayment?:  () => void
+  /** Told when the fan menu opens / closes (the dashboard holds tips back while it is open). */
+  onOpenChange?:      (open: boolean) => void
 }
 
 /**
@@ -21,8 +23,13 @@ interface FABProps {
  */
 export default function FAB({
   onAddCategory, onAddSale, onAddExpense, onManageCategories, disabled = false, onAdvance, onReceivePayment,
+  onOpenChange,
 }: FABProps) {
   const [open, setOpen] = useState(false)
+
+  useEffect(() => {
+    onOpenChange?.(open)
+  }, [open, onOpenChange])
   const fabRef = useRef<HTMLDivElement>(null)
   const toggleRef = useRef<HTMLButtonElement>(null)
   const firstItemRef = useRef<HTMLButtonElement>(null)

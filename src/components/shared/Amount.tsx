@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState, type ReactNode } from 'react'
+import { useCallback, useMemo, useState, type ReactNode, type Ref } from 'react'
 import { Eye, EyeOff } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import {
@@ -62,10 +62,11 @@ export function AmountVisibilityProvider({ children }: { children: ReactNode }) 
 }
 
 /** Eye button (dashboard greeting row): shows / hides every amount. */
-export function AmountVisibilityToggle() {
+export function AmountVisibilityToggle({ ref }: { ref?: Ref<HTMLButtonElement> }) {
   const { hidden, toggle } = useAmountVisibility()
   return (
     <button
+      ref={ref}
       type="button"
       onClick={toggle}
       aria-pressed={!hidden}

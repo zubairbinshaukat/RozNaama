@@ -1,4 +1,4 @@
-import { useMemo } from 'react'
+import { useEffect, useMemo } from 'react'
 import SummaryCards, { type YearSummary } from './SummaryCards'
 import { DayNav, MonthNav, WeekNav, YearNav } from './PeriodNav'
 import {
@@ -30,6 +30,8 @@ import { startOfDay } from '@/lib/utils'
 interface Common {
   onAddExpense: () => void
   readOnly: boolean
+  /** Called once numbers (live or snapshot) are on screen. */
+  onSettled?: () => void
 }
 
 interface PeriodSummaryProps extends Common {
@@ -57,8 +59,12 @@ type Props = Omit<PeriodSummaryProps, 'view'>
  * Stats (live, else the offline snapshot) + which periods are from an
  * earlier day: SummaryCards shows those as "—" with "Last updated …".
  */
-function useSummaryStats(ranges?: StatsRanges) {
+function useSummaryStats(ranges: StatsRanges | undefined, onSettled: (() => void) | undefined) {
   const s = useDashboardStatsState(ranges)
+  const settled = s.stats !== undefined
+  useEffect(() => {
+    if (settled) onSettled?.()
+  }, [settled, onSettled])
   const anyStale = s.staleToday || s.staleWeek || s.staleMonth
   return {
     stats: s.stats,
@@ -67,9 +73,9 @@ function useSummaryStats(ranges?: StatsRanges) {
   }
 }
 
-function DailySummary({ value, onChange, ...common }: Props) {
+function DailySummary({ value, onChange, onSettled, ...common }: Props) {
   const ranges = useMemo(() => statsRangesForDay(value), [value])
-  const { stats, ...staleness } = useSummaryStats(ranges)
+  const { stats, ...staleness } = useSummaryStats(ranges, onSettled)
   return (
     <>
       <DayNav value={value} onChange={onChange} />
@@ -85,10 +91,10 @@ function DailySummary({ value, onChange, ...common }: Props) {
   )
 }
 
-function WeeklySummary({ value, onChange, ...common }: Props) {
+function WeeklySummary({ value, onChange, onSettled, ...common }: Props) {
   const today = startOfDay()
   const ranges = useMemo(() => statsRangesForDay(focusDayIn(weekRange(value), today)), [value, today])
-  const { stats, ...staleness } = useSummaryStats(ranges)
+  const { stats, ...staleness } = useSummaryStats(ranges, onSettled)
   const totals = useWeeklyTotals(value)
   const bestDay = useMemo(() => (totals ? bestDayOf(totals, 'weekday') : undefined), [totals])
   return (
@@ -107,10 +113,10 @@ function WeeklySummary({ value, onChange, ...common }: Props) {
   )
 }
 
-function MonthlySummary({ value, onChange, ...common }: Props) {
+function MonthlySummary({ value, onChange, onSettled, ...common }: Props) {
   const today = startOfDay()
   const ranges = useMemo(() => statsRangesForDay(focusDayIn(monthRange(value), today)), [value, today])
-  const { stats, ...staleness } = useSummaryStats(ranges)
+  const { stats, ...staleness } = useSummaryStats(ranges, onSettled)
   const totals = useMonthlyTotals(value)
   const bestDay = useMemo(() => (totals ? bestDayOf(totals, 'date') : undefined), [totals])
   return (
@@ -130,8 +136,8 @@ function MonthlySummary({ value, onChange, ...common }: Props) {
   )
 }
 
-function YearlySummary({ value, onChange, ...common }: Props) {
-  const { stats, ...staleness } = useSummaryStats()
+function YearlySummary({ value, onChange, onSettled, ...common }: Props) {
+  const { stats, ...staleness } = useSummaryStats(undefined, onSettled)
   const years = useAvailableYears()
   const totals = useYearlyMonthlyTotals(value)
   const year = useMemo<YearSummary | undefined>(() => {

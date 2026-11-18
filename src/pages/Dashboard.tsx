@@ -25,6 +25,7 @@ import { SegmentedTabs, BottomNav } from '@/components/dashboard/ViewTabs'
 import FAB             from '@/components/shared/FAB'
 import SheetFallback   from '@/components/shared/SheetFallback'
 import DataFreshnessChip from '@/components/shared/DataFreshnessChip'
+import AmountsEyeTip   from '@/components/dashboard/AmountsEyeTip'
 import { useViewAs } from '@/context/ViewAsContext'
 import { DashboardActionsContext, type DashboardActions } from '@/context/dashboardActions'
 import { useToast } from '@/components/shared/Toast'
@@ -253,6 +254,15 @@ export default function Dashboard() {
     [isViewingOther],
   )
 
+  // One-time eye tip: waits for the numbers and for any menu / sheet to close.
+  const eyeButtonRef = useRef<HTMLButtonElement>(null)
+  const [summarySettled, setSummarySettled] = useState(false)
+  const markSummarySettled = useCallback(() => setSummarySettled(true), [])
+  const [fabOpen, setFabOpen] = useState(false)
+  const anySheetOpen =
+    showCategoryModal || showSaleModal || showExpenseModal || showManageCategoriesModal ||
+    showIOSInstallModal || khataSheet !== null
+
   const backToMyData = () => {
     clearViewAs()
     showToast('Back to your own data', 'info')
@@ -308,7 +318,7 @@ export default function Dashboard() {
                     <AdminAccessDialog />
                   </Suspense>
                 )}
-                <AmountVisibilityToggle />
+                <AmountVisibilityToggle ref={eyeButtonRef} />
               </div>
             </div>
           </section>
@@ -380,6 +390,7 @@ export default function Dashboard() {
                 onChange={changePeriod}
                 onAddExpense={() => setShowExpenseModal(true)}
                 readOnly={isViewingOther}
+                onSettled={markSummarySettled}
               />
               {khataOn && (
                 <Suspense fallback={null}>
@@ -436,6 +447,7 @@ export default function Dashboard() {
           onAddSale={()     => setShowSaleModal(true)}
           onAddExpense={()  => setShowExpenseModal(true)}
           onManageCategories={() => setShowManageCategoriesModal(true)}
+          onOpenChange={setFabOpen}
           {...(khataOn ? {
             onAdvance:        () => setKhataSheet('advance'),
             onReceivePayment: () => setKhataSheet('payment'),
@@ -480,6 +492,13 @@ export default function Dashboard() {
           <IOSInstallModal onClose={() => setShowIOSInstallModal(false)} />
         )}
         </Suspense>
+
+        <AmountsEyeTip
+          target={eyeButtonRef}
+          userId={user?.id ?? null}
+          enabled={summarySettled && !isViewingOther}
+          blocked={fabOpen || anySheetOpen}
+        />
       </div>
     </DashboardActionsContext.Provider>
     </AmountVisibilityProvider>
